@@ -1,0 +1,1179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Onboarding System - Free Navigation</title>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // Test if axios is loaded and provide fallback
+        console.log('Axios loaded:', typeof axios);
+        if (typeof axios === 'undefined') {
+            console.error('Axios failed to load from CDN, trying fallback...');
+            // Fallback: create a simple fetch-based axios-like object
+            window.axios = {
+                get: async (url) => {
+                    const response = await fetch(url);
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    return {
+                        data: await response.json(),
+                        status: response.status
+                    };
+                },
+                post: async (url, data) => {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(data)
+                    });
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    return {
+                        data: await response.json(),
+                        status: response.status
+                    };
+                }
+            };
+            console.log('Fallback axios created');
+        }
+    </script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div class="max-w-6xl mx-auto">
+            <h1 class="text-3xl font-bold text-gray-800 mb-8">Dynamic Onboarding System</h1>
+            
+            <!-- Graph Selection -->
+            <div id="graph-selection" class="bg-white rounded-lg shadow-md p-6 mb-6">
+                <h2 class="text-xl font-semibold text-gray-800 mb-4">Select Onboarding Type</h2>
+                <div id="graphs-list" class="space-y-4">
+                    <div class="text-center text-gray-600">Loading available graphs...</div>
+                </div>
+            </div>
+
+            <!-- Main Onboarding Interface -->
+            <div id="onboarding-interface" class="grid grid-cols-1 lg:grid-cols-3 gap-6" style="display: none;">
+                
+                <!-- Left Panel: Navigation Map -->
+                <div class="lg:col-span-1">
+                    <div class="bg-white rounded-lg shadow-md p-6 sticky top-4">
+                        <h3 class="text-lg font-semibold text-gray-800 mb-4">Onboarding Map</h3>
+                        <div class="text-sm text-gray-600 mb-4">
+                            Session: <span id="session-id" class="font-mono"></span>
+                        </div>
+                        
+                        <!-- Progress Overview -->
+                        <div class="mb-6">
+                            <div class="flex justify-between text-sm text-gray-600 mb-2">
+                                <span>Progress</span>
+                                <span id="progress-text">0/0</span>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-2">
+                                <div id="progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%"></div>
+                            </div>
+                        </div>
+
+                        <!-- Node Navigation -->
+                        <div id="node-navigation" class="space-y-2">
+                            <!-- Nodes will be dynamically generated here -->
+                        </div>
+
+                        <!-- Quick Actions -->
+                        <div class="mt-6 pt-4 border-t border-gray-200">
+                            <h4 class="font-medium text-gray-800 mb-3">Quick Actions</h4>
+                            <div class="space-y-2">
+                                <button onclick="showRequiredOnly()" class="w-full text-left px-3 py-2 text-sm bg-yellow-50 text-yellow-800 rounded-lg hover:bg-yellow-100">
+                                    📋 Show Required Only
+                                </button>
+                                <button onclick="showOptionalOnly()" class="w-full text-left px-3 py-2 text-sm bg-green-50 text-green-800 rounded-lg hover:bg-green-100">
+                                    ✅ Show Optional Only
+                                </button>
+                                <button onclick="showAllNodes()" class="w-full text-left px-3 py-2 text-sm bg-blue-50 text-blue-800 rounded-lg hover:bg-blue-100">
+                                    🔍 Show All Nodes
+                                </button>
+                                <button onclick="resetOnboarding()" class="w-full text-left px-3 py-2 text-sm bg-red-50 text-red-800 rounded-lg hover:bg-red-100">
+                                    🔄 Start Over
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Panel: Current Node Form -->
+                <div class="lg:col-span-2">
+                    <div class="bg-white rounded-lg shadow-md p-6">
+                        <div id="current-node-header" class="mb-6">
+                            <!-- Current node information will be displayed here -->
+                        </div>
+
+                        <div id="error-message" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 hidden">
+                            <!-- Error messages will be displayed here -->
+                        </div>
+                        <form id="node-form" class="space-y-6">
+                            <div id="form-fields">
+                                <!-- Form fields will be dynamically generated here -->
+                            </div>
+                            
+                            <div class="flex flex-wrap gap-3">
+                                <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
+                                    💾 Save & Continue
+                                </button>
+                                <button type="button" onclick="saveAndStay()" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700">
+                                    💾 Save & Stay
+                                </button>
+                                <button type="button" onclick="skipNode()" id="skip-button" class="bg-yellow-600 text-white px-6 py-2 rounded-lg hover:bg-yellow-700" style="display: none;">
+                                    ⏭️ Skip for Now
+                                </button>
+                            </div>
+                        </form>
+
+                        <!-- Data Summary -->
+                        <div id="data-summary" class="mt-8 pt-6 border-t border-gray-200">
+                            <h4 class="font-medium text-gray-800 mb-3">Collected Data Summary</h4>
+                            <div id="summary-content" class="text-sm text-gray-600">
+                                <!-- Summary will be displayed here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Completion Screen -->
+            <div id="completion" class="bg-white rounded-lg shadow-md p-6 text-center" style="display: none;">
+                <div class="text-green-600 text-6xl mb-4">🎉</div>
+                <h2 class="text-2xl font-semibold text-gray-800 mb-4">Onboarding Complete!</h2>
+                <p class="text-gray-600 mb-6">All required information has been collected successfully.</p>
+                <button onclick="resetOnboarding()" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
+                    Start New Onboarding
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080/api/v1';
+        let currentSession = null;
+        let currentGraph = null;
+        let currentNode = null;
+        let allNodes = [];
+        let allEdges = [];
+        let visitedNodes = new Set();
+        let completedNodes = new Set();
+
+        // Initialize the application
+        async function init() {
+            console.log('Initializing application...');
+            console.log('API_BASE:', API_BASE);
+            console.log('axios available:', typeof axios);
+            
+            // Test basic connectivity
+            try {
+                console.log('Testing API connectivity...');
+                const testResponse = await axios.get(`${API_BASE}/graphs`);
+                console.log('API connectivity test successful:', testResponse.status);
+                console.log('Response data:', testResponse.data);
+            } catch (error) {
+                console.error('API connectivity test failed:', error);
+                console.error('Error details:', error.response?.data || error.message);
+            }
+            
+            await loadGraphs();
+        }
+
+        // Load available graphs
+        async function loadGraphs() {
+            try {
+                console.log('Loading graphs from:', `${API_BASE}/graphs`);
+                const response = await axios.get(`${API_BASE}/graphs`);
+                const graphs = response.data;
+                
+                console.log('Received graphs:', graphs);
+                
+                const graphsList = document.getElementById('graphs-list');
+                if (!graphsList) {
+                    console.error('graphs-list element not found');
+                    return;
+                }
+                
+                if (!graphs || graphs.length === 0) {
+                    graphsList.innerHTML = '<div class="text-center text-red-600">No graphs available</div>';
+                    return;
+                }
+
+                graphsList.innerHTML = graphs.map(graph => `
+                    <div class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors" onclick="selectGraph('${graph.id}')">
+                        <h3 class="font-medium text-gray-800">${graph.name}</h3>
+                        <p class="text-sm text-gray-600 mt-1">${graph.description}</p>
+                        <div class="flex justify-between items-center mt-3">
+                            <span class="text-xs text-gray-500">Graph ID: ${graph.id}</span>
+                            <span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">${Object.keys(graph.nodes).length} nodes</span>
+                        </div>
+                    </div>
+                `).join('');
+                
+                console.log('Graphs loaded successfully');
+            } catch (error) {
+                console.error('Error loading graphs:', error);
+                const graphsList = document.getElementById('graphs-list');
+                if (graphsList) {
+                    graphsList.innerHTML = `<div class="text-center text-red-600">Error loading graphs: ${error.message}</div>`;
+                }
+            }
+        }
+
+        // Select a graph and start onboarding
+        async function selectGraph(graphId) {
+            try {
+                // Get graph details
+                const graphResponse = await axios.get(`${API_BASE}/graphs/${graphId}`);
+                currentGraph = graphResponse.data;
+                allNodes = Object.values(currentGraph.nodes);
+                allEdges = Object.values(currentGraph.edges);
+
+                // Start session
+                const sessionResponse = await axios.post(`${API_BASE}/sessions`, {
+                    user_id: 'demo-user',
+                    graph_id: graphId
+                });
+                
+                currentSession = sessionResponse.data;
+                clearError(); // Clear any previous errors
+                
+                // Hide graph selection, show onboarding interface
+                document.getElementById('graph-selection').style.display = 'none';
+                document.getElementById('onboarding-interface').style.display = 'grid';
+                document.getElementById('session-id').textContent = currentSession.id;
+                
+                // Build navigation map
+                buildNavigationMap();
+                
+                // Load current node
+                await loadCurrentNode();
+                
+            } catch (error) {
+                console.error('Error starting onboarding:', error);
+            }
+        }
+
+        // Build the navigation map
+        function buildNavigationMap() {
+            const navigation = document.getElementById('node-navigation');
+            navigation.innerHTML = allNodes.map(node => {
+                const isVisited = visitedNodes.has(node.id);
+                const isCompleted = completedNodes.has(node.id);
+                const isCurrent = currentNode && currentNode.id === node.id;
+                
+                // Check if this node should be available based on current session state
+                const isAvailable = isNodeAvailable(node);
+                
+                let statusClass = 'bg-gray-100 text-gray-600';
+                let statusIcon = '⭕';
+                let clickHandler = `onclick="navigateToNode('${node.id}')"`;
+                
+                if (!isAvailable) {
+                    statusClass = 'bg-gray-50 text-gray-400 cursor-not-allowed opacity-50';
+                    statusIcon = '🚫';
+                    clickHandler = ''; // Disable clicking
+                } else if (isCurrent) {
+                    statusClass = 'bg-blue-100 text-blue-800 border-blue-300';
+                    statusIcon = '📍';
+                } else if (isCompleted) {
+                    statusClass = 'bg-green-100 text-green-800 border-green-300';
+                    statusIcon = '✅';
+                } else if (isVisited) {
+                    statusClass = 'bg-yellow-100 text-yellow-800 border-yellow-300';
+                    statusIcon = '🔄';
+                }
+
+                const requiredFields = node.fields.filter(f => f.required).length;
+                const optionalFields = node.fields.filter(f => !f.required).length;
+                
+                return `
+                    <div class="border rounded-lg p-3 transition-colors ${statusClass}" ${clickHandler}>
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center space-x-2">
+                                <span class="text-sm">${statusIcon}</span>
+                                <span class="text-sm font-medium">${node.name}</span>
+                            </div>
+                            <div class="text-xs">
+                                ${requiredFields > 0 ? `<span class="text-red-600">${requiredFields}R</span>` : ''}
+                                ${optionalFields > 0 ? `<span class="text-green-600">${optionalFields}O</span>` : ''}
+                            </div>
+                        </div>
+                        <div class="text-xs mt-1 opacity-75">${node.type}</div>
+                        ${!isAvailable ? '<div class="text-xs text-red-500 mt-1">Not available yet</div>' : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Check if a node is available based on current session state
+        function isNodeAvailable(node) {
+            // Completion/end nodes should never be available for navigation
+            if (node.type === 'end' || node.name === 'Onboarding Complete') {
+                return false;
+            }
+            
+            // If it's the current node, it's always available
+            if (currentNode && currentNode.id === node.id) {
+                return true;
+            }
+            
+            // If it's completed, it's available for review
+            if (completedNodes.has(node.id)) {
+                return true;
+            }
+            
+            // Start node is always available
+            if (node.name === 'User Type Selection') {
+                return true;
+            }
+            
+            // If we haven't completed the user type selection, only show the start node
+            const userTypeSelectionNode = allNodes.find(n => n.name === 'User Type Selection');
+            if (userTypeSelectionNode && !completedNodes.has(userTypeSelectionNode.id)) {
+                return false; // Only start node should be available
+            }
+            
+            // If we have user type data, show nodes based on the selected path
+            if (currentSession && currentSession.data && currentSession.data.user_type) {
+                const userType = currentSession.data.user_type;
+                
+                if (userType === 'individual') {
+                    // For individual users, hide company-specific nodes
+                    if (node.name === 'Business Type' || node.name === 'Company Information') {
+                        return false;
+                    }
+                } else if (userType === 'company') {
+                    // For company users, hide individual-specific nodes
+                    if (node.name === 'Personal Information') {
+                        return false;
+                    }
+                }
+            }
+            
+            // NEW LOGIC: Enable all possible paths based on current session state
+            // Once user type is selected, enable most nodes for free navigation
+            
+            // If we have user type selected, enable most nodes
+            if (currentSession && currentSession.data && currentSession.data.user_type) {
+                // Enable all nodes except the ones explicitly blocked by user type
+                const blockedNodes = [];
+                
+                if (currentSession.data.user_type === 'individual') {
+                    blockedNodes.push('Business Type', 'Company Information');
+                } else if (currentSession.data.user_type === 'company') {
+                    blockedNodes.push('Personal Information');
+                }
+                
+                // If this node is not blocked, it's available
+                if (!blockedNodes.includes(node.name)) {
+                    console.log(`✅ Node ${node.name} is available (not blocked by user type)`);
+                    return true;
+                } else {
+                    console.log(`❌ Node ${node.name} is blocked by user type: ${currentSession.data.user_type}`);
+                }
+            }
+            
+            // Fallback: if we don't have user type, use the old restrictive logic
+            const nodeOrder = [
+                'User Type Selection',
+                'Personal Information', 'Business Type',
+                'Company Information',
+                'Contact Information',
+                'Identity Documents',
+                'Tax Information',
+                'Bank Details',
+                'Document Upload',
+                'Onboarding Complete'
+            ];
+            
+            const currentIndex = nodeOrder.indexOf(currentNode ? currentNode.name : 'User Type Selection');
+            const nodeIndex = nodeOrder.indexOf(node.name);
+            
+            // Allow access to current node and next few nodes
+            if (nodeIndex <= currentIndex + 2) {
+                console.log(`✅ Node ${node.name} is available (fallback logic: index ${nodeIndex} <= ${currentIndex + 2})`);
+                return true;
+            }
+            
+            console.log(`❌ Node ${node.name} is not available (fallback logic: index ${nodeIndex} > ${currentIndex + 2})`);
+            return false;
+        }
+
+        // Navigate to a specific node
+        async function navigateToNode(nodeId) {
+            try {
+                // Find the node
+                const node = allNodes.find(n => n.id === nodeId);
+                if (!node) return;
+
+                // Save current form data before navigating (if there's a current node)
+                if (currentNode && currentNode.id !== nodeId) {
+                    await saveCurrentFormData();
+                }
+
+                // Update UI to show the selected node
+                currentNode = node;
+                visitedNodes.add(nodeId);
+                clearError(); // Clear any previous errors
+                
+                // Update UI
+                updateCurrentNodeHeader();
+                generateFormFields();
+                buildNavigationMap();
+                updateProgress();
+                updateDataSummary();
+                
+                // Let backend handle completion detection - check if current node is completion node
+                const currentNavNode = allNodes.find(node => node.id === currentSession.current_node_id);
+                if (currentNavNode && (currentNavNode.type === 'end' || currentNavNode.name === 'Onboarding Complete')) {
+                    console.log('Backend navigated to completion node, showing completion screen');
+                    showCompletion();
+                }
+                
+                console.log(`Navigated to node: ${node.name} (${nodeId})`);
+                
+            } catch (error) {
+                console.error('Error navigating to node:', error);
+            }
+        }
+
+        // Save current form data without submitting to backend
+        async function saveCurrentFormData() {
+            if (!currentNode) return;
+            
+            const formData = new FormData(document.getElementById('node-form'));
+            const data = {};
+            
+            // Collect all form data
+            for (let [key, value] of formData.entries()) {
+                data[key] = value || '';
+            }
+            
+            // Update our local session data
+            if (!currentSession.data) {
+                currentSession.data = {};
+            }
+            Object.assign(currentSession.data, data);
+        }
+
+        // Clear subsequent path when a path-changing node is modified
+        async function clearSubsequentPath() {
+            console.log('Clearing subsequent path...');
+            
+            // Clear all completed nodes except the current one
+            const currentCompletedNodes = Array.from(completedNodes);
+            completedNodes.clear();
+            completedNodes.add(currentNode.id); // Keep current node as completed
+            
+            // Clear visited nodes except the current one
+            const currentVisitedNodes = Array.from(visitedNodes);
+            visitedNodes.clear();
+            visitedNodes.add(currentNode.id); // Keep current node as visited
+            
+            // Clear session data for subsequent nodes
+            // Keep only the data from the current node and previous nodes
+            const currentData = {};
+            if (currentSession.data) {
+                // Keep data from current node
+                currentNode.fields.forEach(field => {
+                    if (currentSession.data[field.id]) {
+                        currentData[field.id] = currentSession.data[field.id];
+                    }
+                });
+            }
+            currentSession.data = currentData;
+            
+            console.log('Cleared subsequent path. Remaining completed nodes:', Array.from(completedNodes));
+            console.log('Cleared session data:', currentSession.data);
+        }
+
+        // Check if onboarding is actually complete - let backend decide
+        function isOnboardingActuallyComplete() {
+            if (!currentSession || !currentSession.data) {
+                console.log('No session or data available');
+                return false;
+            }
+            
+            // Check if we're already at the completion node
+            const currentNode = allNodes.find(node => node.id === currentSession.current_node_id);
+            if (currentNode && (currentNode.type === 'end' || currentNode.name === 'Onboarding Complete')) {
+                console.log('Already at completion node');
+                return true;
+            }
+            
+            // Let backend decide by checking if we can reach completion
+            // This is a simple check - if backend says we're done, we're done
+            return false; // Backend will handle the actual completion logic
+        }
+        
+        // Backend handles all validation - frontend just follows backend decisions
+        
+        // Evaluate edge condition based on current session data
+        function evaluateEdgeCondition(edge, sessionData) {
+            if (!edge.condition) {
+                return true; // No condition means always true
+            }
+            
+            const condition = edge.condition;
+            
+            switch (condition.type) {
+                case 'always':
+                    return true;
+                    
+                case 'field_value':
+                    const fieldValue = sessionData[condition.field];
+                    if (fieldValue === undefined) {
+                        return false;
+                    }
+                    
+                    switch (condition.operator) {
+                        case 'eq':
+                            return fieldValue === condition.value;
+                        case 'in':
+                            return Array.isArray(condition.value) && condition.value.includes(fieldValue);
+                        case 'ne':
+                            return fieldValue !== condition.value;
+                        default:
+                            return false;
+                    }
+                    
+                case 'custom':
+                    // For now, assume custom conditions are met if we have the required data
+                    return true;
+                    
+                default:
+                    return false;
+            }
+        }
+
+        // Load current node from session
+        async function loadCurrentNode() {
+            try {
+                const response = await axios.get(`${API_BASE}/sessions/${currentSession.id}/current`);
+                const node = response.data;
+                
+                currentNode = node;
+                visitedNodes.add(node.id);
+                
+                // Also get the full session to understand available paths
+                await loadSessionState();
+                
+                updateCurrentNodeHeader();
+                generateFormFields();
+                buildNavigationMap();
+                updateProgress();
+                updateDataSummary();
+                
+            } catch (error) {
+                console.error('Error loading current node:', error);
+            }
+        }
+
+        // Load session state to understand available paths
+        async function loadSessionState() {
+            try {
+                const response = await axios.get(`${API_BASE}/sessions/${currentSession.id}`);
+                const session = response.data;
+                
+                console.log('Loading session state:', session);
+                
+                // Clear existing data
+                currentSession.data = {};
+                completedNodes.clear();
+                visitedNodes.clear();
+                
+                // Update our understanding of completed nodes based on session history
+                if (session.history) {
+                    session.history.forEach(step => {
+                        completedNodes.add(step.node_id);
+                        visitedNodes.add(step.node_id);
+                        
+                        // Also preserve the data from each step
+                        if (step.data) {
+                            Object.assign(currentSession.data, step.data);
+                        }
+                    });
+                }
+                
+                // Also load any current session data
+                if (session.data) {
+                    Object.assign(currentSession.data, session.data);
+                }
+                
+                console.log('Loaded session data:', currentSession.data);
+                console.log('Completed nodes:', Array.from(completedNodes));
+                
+                // Recalculate available paths after loading session data
+                buildNavigationMap();
+                
+            } catch (error) {
+                console.error('Error loading session state:', error);
+            }
+        }
+
+        // Update current node header
+        function updateCurrentNodeHeader() {
+            if (!currentNode) return;
+            
+            const header = document.getElementById('current-node-header');
+            const requiredFields = currentNode.fields.filter(f => f.required).length;
+            const optionalFields = currentNode.fields.filter(f => !f.required).length;
+            
+            header.innerHTML = `
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h2 class="text-xl font-semibold text-gray-800">${currentNode.name}</h2>
+                        <p class="text-gray-600 mt-1">${currentNode.description}</p>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-sm text-gray-500">Node Type</div>
+                        <div class="text-sm font-medium text-gray-800">${currentNode.type}</div>
+                    </div>
+                </div>
+                <div class="mt-4 flex space-x-4 text-sm">
+                    <span class="bg-red-100 text-red-800 px-2 py-1 rounded">${requiredFields} Required</span>
+                    <span class="bg-green-100 text-green-800 px-2 py-1 rounded">${optionalFields} Optional</span>
+                </div>
+            `;
+        }
+
+        // Generate form fields
+        function generateFormFields() {
+            if (!currentNode) return;
+            
+            const formFields = document.getElementById('form-fields');
+            
+            // Handle completion/end nodes differently
+            if (currentNode.type === 'end') {
+                showCompletion();
+                return;
+            }
+            
+            if (currentNode.fields && currentNode.fields.length > 0) {
+                formFields.innerHTML = currentNode.fields.map(field => generateFieldHTML(field)).join('');
+                
+                // Populate fields with existing data from session after a small delay
+                // to ensure the DOM is fully updated
+                setTimeout(() => {
+                    populateFormWithExistingData();
+                }, 10);
+            } else {
+                formFields.innerHTML = '<p class="text-gray-600 text-center py-8">No input fields required for this step.</p>';
+            }
+
+            // Show/hide skip button based on whether there are required fields
+            const skipButton = document.getElementById('skip-button');
+            const hasRequiredFields = currentNode.fields && currentNode.fields.some(f => f.required);
+            skipButton.style.display = hasRequiredFields ? 'none' : 'block';
+        }
+
+        // Populate form fields with existing data from session
+        function populateFormWithExistingData() {
+            if (!currentSession || !currentSession.data) {
+                console.log('No session data to populate:', { currentSession, data: currentSession?.data });
+                return;
+            }
+            
+            console.log('Populating form with session data:', currentSession.data);
+            console.log('Current node:', currentNode);
+            
+            // Populate each field with existing data
+            Object.keys(currentSession.data).forEach(fieldId => {
+                // Try to find the field by name attribute first, then by id
+                let fieldElement = document.querySelector(`[name="${fieldId}"]`);
+                if (!fieldElement) {
+                    fieldElement = document.getElementById(fieldId);
+                }
+                
+                console.log(`Looking for field ${fieldId}:`, fieldElement);
+                
+                if (fieldElement && currentSession.data[fieldId] !== undefined && currentSession.data[fieldId] !== '') {
+                    if (fieldElement.type === 'checkbox' || fieldElement.type === 'radio') {
+                        fieldElement.checked = currentSession.data[fieldId] === 'true' || currentSession.data[fieldId] === true;
+                    } else {
+                        fieldElement.value = currentSession.data[fieldId];
+                    }
+                    console.log(`✅ Populated field ${fieldId} with value:`, currentSession.data[fieldId]);
+                } else {
+                    console.log(`❌ Field ${fieldId} not found or no data to populate`);
+                }
+            });
+        }
+
+        // Generate HTML for form fields
+        function generateFieldHTML(field) {
+            const baseClasses = "w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500";
+            const requiredClass = field.required ? "border-red-300 focus:ring-red-500" : "border-gray-300 focus:ring-blue-500";
+            
+            const label = `
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                    ${field.name.replace(/_/g, ' ').toUpperCase()}
+                    ${field.required ? '<span class="text-red-500 ml-1">*</span>' : '<span class="text-green-500 ml-1">(Optional)</span>'}
+                </label>
+            `;
+            
+            switch (field.type) {
+                case 'select':
+                    return `
+                        <div class="space-y-2">
+                            ${label}
+                            <select name="${field.id}" class="${baseClasses} ${requiredClass}" ${field.required ? 'required' : ''}>
+                                <option value="">Select ${field.name.replace(/_/g, ' ')}</option>
+                                ${field.options.map(option => `<option value="${option}">${option.replace(/_/g, ' ').toUpperCase()}</option>`).join('')}
+                            </select>
+                        </div>
+                    `;
+                case 'email':
+                    return `
+                        <div class="space-y-2">
+                            ${label}
+                            <input type="email" name="${field.id}" class="${baseClasses} ${requiredClass}" ${field.required ? 'required' : ''} placeholder="Enter ${field.name.replace(/_/g, ' ')}">
+                        </div>
+                    `;
+                case 'number':
+                    return `
+                        <div class="space-y-2">
+                            ${label}
+                            <input type="number" name="${field.id}" class="${baseClasses} ${requiredClass}" ${field.required ? 'required' : ''} placeholder="Enter ${field.name.replace(/_/g, ' ')}">
+                        </div>
+                    `;
+                case 'date':
+                    return `
+                        <div class="space-y-2">
+                            ${label}
+                            <input type="date" name="${field.id}" class="${baseClasses} ${requiredClass}" ${field.required ? 'required' : ''}>
+                        </div>
+                    `;
+                case 'file':
+                    return `
+                        <div class="space-y-2">
+                            ${label}
+                            <input type="file" name="${field.id}" class="${baseClasses} ${requiredClass}" ${field.required ? 'required' : ''}>
+                        </div>
+                    `;
+                default:
+                    // Special handling for PAN and Aadhaar numbers
+                    let inputType = 'text';
+                    let placeholder = `Enter ${field.name.replace(/_/g, ' ')}`;
+                    let maxLength = '';
+                    let pattern = '';
+                    
+                    if (field.id === 'pan_number') {
+                        inputType = 'text';
+                        placeholder = 'Enter PAN (e.g., ABCDE1234F)';
+                        maxLength = 'maxlength="10"';
+                        pattern = 'pattern="[A-Z]{5}[0-9]{4}[A-Z]{1}"';
+                    } else if (field.id === 'aadhaar_number') {
+                        inputType = 'text';
+                        placeholder = 'Enter Aadhaar (12 digits)';
+                        maxLength = 'maxlength="12"';
+                        pattern = 'pattern="[0-9]{12}"';
+                    }
+                    
+                    return `
+                        <div class="space-y-2">
+                            ${label}
+                            <input type="${inputType}" name="${field.id}" class="${baseClasses} ${requiredClass}" ${field.required ? 'required' : ''} placeholder="${placeholder}" ${maxLength} ${pattern}>
+                        </div>
+                    `;
+            }
+        }
+
+        // Save and continue to next node
+        document.getElementById('node-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            await saveNodeData(true);
+        });
+
+        // Save and stay on current node
+        async function saveAndStay() {
+            await saveNodeData(false);
+        }
+
+        // Skip current node
+        async function skipNode() {
+            if (currentNode.fields.some(f => f.required)) {
+                alert('Cannot skip node with required fields');
+                return;
+            }
+            
+            // Mark as completed and move to next available node
+            completedNodes.add(currentNode.id);
+            buildNavigationMap();
+            updateProgress();
+            updateDataSummary();
+            
+            // Find next incomplete node
+            const nextNode = allNodes.find(node => !completedNodes.has(node.id));
+            if (nextNode) {
+                await navigateToNode(nextNode.id);
+            } else {
+                showCompletion();
+            }
+        }
+
+        // Save node data
+        async function saveNodeData(continueToNext = true) {
+            try {
+                // Get current node from backend to ensure we're saving the right node
+                const currentResponse = await axios.get(`${API_BASE}/sessions/${currentSession.id}/current`);
+                const backendCurrentNode = currentResponse.data;
+            
+            const formData = new FormData(document.getElementById('node-form'));
+            const data = {};
+            
+            console.log('Form data entries:');
+            for (let [key, value] of formData.entries()) {
+                console.log(`  ${key}: ${value}`);
+                data[key] = value || ''; // Include empty values as empty strings
+            }
+            
+            // Also collect from all inputs in the current node to ensure we don't miss anything
+            const allInputs = document.querySelectorAll('#form-fields input, #form-fields select, #form-fields textarea');
+            console.log('All inputs found:', allInputs.length);
+            allInputs.forEach(input => {
+                if (input.name) {
+                    if (input.type === 'checkbox' || input.type === 'radio') {
+                        data[input.name] = input.checked;
+                        console.log(`  ${input.name} (${input.type}): ${input.checked}`);
+                    } else {
+                        data[input.name] = input.value || '';
+                        console.log(`  ${input.name} (${input.type}): ${input.value}`);
+                    }
+                }
+            });
+            
+            // Ensure we have all required fields from the current node
+            if (backendCurrentNode.fields) {
+                backendCurrentNode.fields.forEach(field => {
+                    if (field.required && !data.hasOwnProperty(field.id)) {
+                        data[field.id] = '';
+                    }
+                });
+            }
+            
+            // Preserve existing session data for fields not in current node
+            if (currentSession.data) {
+                Object.keys(currentSession.data).forEach(key => {
+                    if (!data.hasOwnProperty(key)) {
+                        data[key] = currentSession.data[key];
+                    }
+                });
+            }
+            
+            // Preprocess PAN and Aadhaar numbers to ensure correct format
+            if (data.pan_number && data.pan_number.trim()) {
+                data.pan_number = data.pan_number.toUpperCase().trim();
+                console.log('PAN number processed:', data.pan_number);
+            }
+            if (data.aadhaar_number && data.aadhaar_number.trim()) {
+                data.aadhaar_number = data.aadhaar_number.replace(/\D/g, ''); // Remove non-digits
+                console.log('Aadhaar number processed:', data.aadhaar_number);
+            }
+            
+            // Ensure user_type is properly set for validation
+            if (data.user_type) {
+                console.log('User type in data:', data.user_type);
+            } else if (currentSession.data && currentSession.data.user_type) {
+                data.user_type = currentSession.data.user_type;
+                console.log('User type from session:', data.user_type);
+            }
+            
+            // Only remove truly empty optional fields (not required fields)
+            Object.keys(data).forEach(key => {
+                const value = data[key];
+                const isRequired = backendCurrentNode.fields?.some(f => f.id === key && f.required);
+                
+                // Remove empty optional fields, but keep required fields even if empty
+                if (!isRequired && (!value || value.toString().trim() === '')) {
+                    delete data[key];
+                }
+            });
+
+            console.log('Saving data for node:', backendCurrentNode.name, data);
+            console.log('Required fields:', backendCurrentNode.fields?.map(f => ({id: f.id, required: f.required})));
+            console.log('Completed nodes:', Array.from(completedNodes));
+
+            try {
+                // Check if we're changing a critical node that affects the path
+                const isPathChangingNode = currentNode && (
+                    currentNode.name === 'User Type Selection' || 
+                    currentNode.name === 'Business Type'
+                );
+                
+                if (isPathChangingNode) {
+                    // Check if the data has changed in a way that affects the path
+                    const oldValue = currentSession.data[currentNode.fields[0]?.id];
+                    const newValue = data[currentNode.fields[0]?.id];
+                    
+                    if (oldValue && oldValue !== newValue) {
+                        console.log(`Path-changing node data changed from ${oldValue} to ${newValue}, clearing subsequent path`);
+                        // Clear all subsequent nodes and restart the path
+                        await clearSubsequentPath();
+                    }
+                }
+                
+                // Check if we're trying to save data for a node that's not the current backend node
+                if (currentNode && currentNode.id !== backendCurrentNode.id) {
+                    // We're on a different node in the UI than the backend expects
+                    // Just save the data locally and mark as completed
+                    completedNodes.add(currentNode.id);
+                    
+                    // Update our session data with the submitted data
+                    if (!currentSession.data) {
+                        currentSession.data = {};
+                    }
+                    Object.assign(currentSession.data, data);
+                    
+                    // Update UI
+                    buildNavigationMap();
+                    updateProgress();
+                    updateDataSummary();
+                    
+                    if (continueToNext) {
+                        // Find next incomplete node that is also available
+                        const nextNode = allNodes.find(node => 
+                            !completedNodes.has(node.id) && 
+                            isNodeAvailable(node) &&
+                            node.id !== currentNode.id
+                        );
+                        if (nextNode) {
+                            console.log(`Navigating to next unvisited node: ${nextNode.name}`);
+                            await navigateToNode(nextNode.id);
+                        } else {
+                            // Backend will handle completion detection - if no next node, we're done
+                            console.log('No next node found, showing completion screen');
+                            showCompletion();
+                        }
+                    }
+                    return;
+                }
+                
+                // Normal flow: save to backend
+                const response = await axios.post(`${API_BASE}/sessions/${currentSession.id}/submit`, data);
+                
+                // If successful, mark as completed
+                completedNodes.add(backendCurrentNode.id);
+                
+                // Update our session data with the submitted data
+                if (!currentSession.data) {
+                    currentSession.data = {};
+                }
+                Object.assign(currentSession.data, data);
+                
+                // Recalculate available paths after data update
+                buildNavigationMap();
+                
+                // Let backend handle completion detection - check if current node is completion node
+                const currentSaveNode = allNodes.find(node => node.id === currentSession.current_node_id);
+                if (currentSaveNode && (currentSaveNode.type === 'end' || currentSaveNode.name === 'Onboarding Complete')) {
+                    console.log('Backend says onboarding is complete after save, showing completion screen');
+                    showCompletion();
+                }
+                
+                if (continueToNext) {
+                    // Let the backend determine the next node instead of our local logic
+                    if (response.data.next_node_id) {
+                        // Check if the next node has already been visited
+                        if (completedNodes.has(response.data.next_node_id)) {
+                            // Find the next unvisited node
+                            const nextUnvisitedNode = allNodes.find(node => 
+                                !completedNodes.has(node.id) && 
+                                isNodeAvailable(node) &&
+                                node.id !== backendCurrentNode.id
+                            );
+                            
+                            if (nextUnvisitedNode) {
+                                console.log(`Next node ${response.data.next_node_id} already visited, navigating to unvisited node: ${nextUnvisitedNode.name}`);
+                                await navigateToNode(nextUnvisitedNode.id);
+                            } else {
+                                // No unvisited nodes available, backend will handle completion
+                                console.log('No unvisited nodes available, showing completion screen');
+                                showCompletion();
+                            }
+                        } else {
+                            // Navigate to the specific next node determined by the backend
+                            const nextNode = allNodes.find(n => n.id === response.data.next_node_id);
+                            if (nextNode) {
+                                await navigateToNode(nextNode.id);
+                            } else {
+                                // Fallback: reload current node from backend
+                                await loadCurrentNode();
+                            }
+                        }
+                    } else {
+                        // No next node, check if we're complete
+                        showCompletion();
+                    }
+                } else {
+                    // Just refresh the current view without changing the node
+                    updateCurrentNodeHeader();
+                    generateFormFields(); // This will populate with saved data
+                    buildNavigationMap();
+                    updateProgress();
+                    updateDataSummary();
+                }
+                
+            } catch (error) {
+                console.error('Error saving data:', error);
+                
+                // Show detailed validation errors
+                let errorMessage = 'Error saving data: ';
+                if (error.response?.data?.message) {
+                    errorMessage += error.response.data.message;
+                } else if (error.response?.data?.error) {
+                    errorMessage += error.response.data.error;
+                } else if (error.response?.data?.errors) {
+                    // Handle validation errors array
+                    const errors = error.response.data.errors;
+                    const errorDetails = errors.map(err => `${err.field}: ${err.message}`).join(', ');
+                    errorMessage += `Validation failed: ${errorDetails}`;
+                } else {
+                    errorMessage += error.message;
+                }
+                
+                // Show error in the UI instead of alert
+                showError(errorMessage);
+            }
+        } catch (error) {
+            console.error('Error in saveNodeData:', error);
+            showError('Failed to save data: ' + error.message);
+        }
+        }
+
+        // Update progress
+        function updateProgress() {
+            const totalNodes = allNodes.length;
+            const completedCount = completedNodes.size;
+            const progressPercent = totalNodes > 0 ? (completedCount / totalNodes) * 100 : 0;
+            
+            document.getElementById('progress-text').textContent = `${completedCount}/${totalNodes}`;
+            document.getElementById('progress-bar').style.width = `${progressPercent}%`;
+        }
+
+        // Update data summary
+        function updateDataSummary() {
+            const summary = document.getElementById('summary-content');
+            const completedNodeNames = Array.from(completedNodes).map(nodeId => {
+                const node = allNodes.find(n => n.id === nodeId);
+                return node ? node.name : nodeId;
+            });
+            
+            if (completedNodeNames.length === 0) {
+                summary.innerHTML = '<p class="text-gray-500">No data collected yet.</p>';
+            } else {
+                summary.innerHTML = `
+                    <div class="space-y-2">
+                        ${completedNodeNames.map(name => `
+                            <div class="flex items-center space-x-2">
+                                <span class="text-green-600">✅</span>
+                                <span class="text-sm">${name}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+        }
+
+        // Show completion screen
+        function showCompletion() {
+            document.getElementById('onboarding-interface').style.display = 'none';
+            document.getElementById('completion').style.display = 'block';
+        }
+
+        // Show error message
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message');
+            if (errorDiv) {
+                errorDiv.textContent = message;
+                errorDiv.style.display = 'block';
+                errorDiv.scrollIntoView({ behavior: 'smooth' });
+            } else {
+                alert(message); // Fallback to alert if error div doesn't exist
+            }
+        }
+
+        // Clear error message
+        function clearError() {
+            const errorDiv = document.getElementById('error-message');
+            if (errorDiv) {
+                errorDiv.style.display = 'none';
+            }
+        }
+
+        // Filter functions
+        function showRequiredOnly() {
+            // Highlight nodes with required fields
+            const nodes = document.querySelectorAll('#node-navigation > div');
+            nodes.forEach(node => {
+                const hasRequired = node.textContent.includes('R');
+                node.style.opacity = hasRequired ? '1' : '0.3';
+            });
+        }
+
+        function showOptionalOnly() {
+            // Highlight nodes with only optional fields
+            const nodes = document.querySelectorAll('#node-navigation > div');
+            nodes.forEach(node => {
+                const hasRequired = node.textContent.includes('R');
+                const hasOptional = node.textContent.includes('O');
+                node.style.opacity = (!hasRequired && hasOptional) ? '1' : '0.3';
+            });
+        }
+
+        function showAllNodes() {
+            // Show all nodes
+            const nodes = document.querySelectorAll('#node-navigation > div');
+            nodes.forEach(node => {
+                node.style.opacity = '1';
+            });
+        }
+
+        // Reset onboarding
+        function resetOnboarding() {
+            currentSession = null;
+            currentGraph = null;
+            currentNode = null;
+            allNodes = [];
+            visitedNodes.clear();
+            completedNodes.clear();
+            
+            document.getElementById('graph-selection').style.display = 'block';
+            document.getElementById('onboarding-interface').style.display = 'none';
+            document.getElementById('completion').style.display = 'none';
+            
+            loadGraphs();
+        }
+
+        // Initialize when page loads
+        console.log('Script loaded, calling init...');
+        
+        // Wait for DOM to be ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                console.log('DOM ready, initializing...');
+                init().catch(error => {
+                    console.error('Init failed:', error);
+                    alert('Failed to initialize: ' + error.message);
+                });
+            });
+        } else {
+            console.log('DOM already ready, initializing...');
+            init().catch(error => {
+                console.error('Init failed:', error);
+                alert('Failed to initialize: ' + error.message);
+            });
+        }
+        
+        // Test timeout removed - loadGraphs() should handle the display
+    </script>
+</body>
+</html>

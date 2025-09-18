@@ -1,0 +1,5 @@
+---
+description: The project needs to be strictly appied and worked on as golang langauge. target to achive is flexibitly for easyness on onboarding, durable, fault tollerant , failure recovery , retry capablity
+globs: 
+alwaysApply: true
+---

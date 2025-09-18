@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test UI</title>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+</head>
+<body>
+    <h1>Test UI</h1>
+    <div id="status">Loading...</div>
+    
+    <script>
+        const API_BASE = 'http://localhost:8080/api/v1';
+        
+        async function testAPI() {
+            const statusDiv = document.getElementById('status');
+            
+            try {
+                console.log('Testing axios...');
+                console.log('Axios available:', typeof axios);
+                
+                if (typeof axios === 'undefined') {
+                    statusDiv.innerHTML = 'Error: Axios not loaded';
+                    return;
+                }
+                
+                console.log('Making API call...');
+                const response = await axios.get(`${API_BASE}/graphs`);
+                console.log('Response:', response);
+                
+                statusDiv.innerHTML = `
+                    <h2>Success!</h2>
+                    <p>Status: ${response.status}</p>
+                    <p>Graphs found: ${response.data.length}</p>
+                    <p>First graph: ${response.data[0].name}</p>
+                `;
+                
+            } catch (error) {
+                console.error('Error:', error);
+                statusDiv.innerHTML = `
+                    <h2>Error!</h2>
+                    <p>Message: ${error.message}</p>
+                    <p>Response: ${error.response?.data || 'No response data'}</p>
+                `;
+            }
+        }
+        
+        // Test when page loads
+        testAPI();
+    </script>
+</body>
+</html>
