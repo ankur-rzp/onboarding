@@ -46,6 +46,12 @@ func (e *Engine) ValidateNode(ctx context.Context, node *Node, data map[string]i
 	// Validate individual fields
 	for _, field := range node.Fields {
 		if value, exists := data[field.ID]; exists && value != nil {
+			// Skip validation for optional fields that are empty
+			valueStr := fmt.Sprintf("%v", value)
+			if !field.Required && valueStr == "" {
+				continue
+			}
+
 			fieldResult := e.validateField(field, value)
 			if !fieldResult.Valid {
 				result.Valid = false
@@ -212,7 +218,10 @@ func (e *Engine) validateCustomRule(rule string, data map[string]interface{}) bo
 func (e *Engine) validateCondition(condition ValidationCondition, data map[string]interface{}) bool {
 	fieldValue, exists := data[condition.Field]
 	if !exists {
-		return false
+		// If field doesn't exist, check if it's an optional field
+		// For optional fields that don't exist, we should skip the condition validation
+		// Only fail if it's a required field
+		return true // Skip validation for missing optional fields
 	}
 
 	switch condition.Operator {
@@ -270,6 +279,169 @@ func (e *Engine) GetNextNodes(ctx context.Context, graph *Graph, currentNodeID s
 	}
 
 	return nextNodes
+}
+
+// ValidatePathCompleteness checks if all required nodes have meaningful data filled
+func (e *Engine) ValidatePathCompleteness(ctx context.Context, graph *Graph, currentNodeID string, sessionData map[string]interface{}, sessionHistory []SessionStep) (bool, []string) {
+	// Get all nodes that are required for activation based on the current session data
+	requiredNodes := e.getRequiredNodesForActivation(ctx, graph, sessionData)
+
+	// Check which required nodes have ALL their required fields filled with valid data
+	completedNodes := make(map[string]bool)
+
+	// Check each required node to see if it has all required fields filled
+	for _, nodeID := range requiredNodes {
+		node, exists := graph.Nodes[nodeID]
+		if !exists {
+			continue
+		}
+
+		// Check if this node has ALL required fields filled with valid data
+		allRequiredFieldsFilled := true
+		missingFields := make([]string, 0)
+
+		for _, field := range node.Fields {
+			if field.Required {
+				value, exists := sessionData[field.ID]
+				if !exists || value == nil || value == "" {
+					allRequiredFieldsFilled = false
+					missingFields = append(missingFields, field.ID)
+					continue
+				}
+
+				// Check if it's not just empty string or whitespace
+				if strValue, ok := value.(string); ok {
+					if strings.TrimSpace(strValue) == "" {
+						allRequiredFieldsFilled = false
+						missingFields = append(missingFields, field.ID)
+						continue
+					}
+				}
+			}
+		}
+
+		if allRequiredFieldsFilled {
+			completedNodes[nodeID] = true
+			e.logger.WithFields(logrus.Fields{
+				"node_id":   nodeID,
+				"node_name": node.Name,
+			}).Debug("Node marked as completed - all required fields filled")
+		} else {
+			e.logger.WithFields(logrus.Fields{
+				"node_id":        nodeID,
+				"node_name":      node.Name,
+				"missing_fields": missingFields,
+			}).Debug("Node NOT completed - missing required fields")
+		}
+	}
+
+	// Find missing required nodes
+	missingNodes := make([]string, 0)
+	for _, nodeID := range requiredNodes {
+		if !completedNodes[nodeID] {
+			if node, exists := graph.Nodes[nodeID]; exists {
+				missingNodes = append(missingNodes, node.Name)
+			}
+		}
+	}
+
+	return len(missingNodes) == 0, missingNodes
+}
+
+// getRequiredNodesForActivation returns all nodes that must have data for activation based on current session data
+func (e *Engine) getRequiredNodesForActivation(ctx context.Context, graph *Graph, sessionData map[string]interface{}) []string {
+	requiredNodes := make([]string, 0)
+
+	// Get user type to determine the required flow
+	userType, hasUserType := sessionData["user_type"]
+	if !hasUserType {
+		// If no user type, we can't determine requirements
+		return requiredNodes
+	}
+
+	// Define required nodes based on user type and business rules
+	if userType == "individual" {
+		// For individuals: User Type Selection, Personal Information, Contact Information, Identity Documents, Bank Details, Document Upload
+		requiredNodes = []string{
+			graph.StartNodeID, // User Type Selection (always required)
+		}
+
+		// Add other required nodes for individuals - must be the CORRECT nodes for individual users
+		for nodeID, node := range graph.Nodes {
+			if node.Type == "input" && nodeID != graph.StartNodeID {
+				// For individuals, we need Personal Information (NOT Company Information)
+				if node.Name == "Personal Information" ||
+					node.Name == "Contact Information" ||
+					node.Name == "Identity Documents" ||
+					node.Name == "Bank Details" ||
+					node.Name == "Document Upload" {
+					requiredNodes = append(requiredNodes, nodeID)
+				}
+			}
+		}
+	} else if userType == "company" {
+		// For companies: User Type Selection, Business Type, Company Information, Contact Information, Identity Documents, Tax Information, Bank Details, Document Upload
+		requiredNodes = []string{
+			graph.StartNodeID, // User Type Selection (always required)
+		}
+
+		// Add other required nodes for companies - must be the CORRECT nodes for company users
+		for nodeID, node := range graph.Nodes {
+			if node.Type == "input" && nodeID != graph.StartNodeID {
+				// For companies, we need Company Information (NOT Personal Information)
+				if node.Name == "Business Type" ||
+					node.Name == "Company Information" ||
+					node.Name == "Contact Information" ||
+					node.Name == "Identity Documents" ||
+					node.Name == "Tax Information" ||
+					node.Name == "Bank Details" ||
+					node.Name == "Document Upload" {
+					requiredNodes = append(requiredNodes, nodeID)
+				}
+			}
+		}
+	}
+
+	return requiredNodes
+}
+
+// getRequiredNodesForPath returns all nodes that must be completed before reaching the target node
+func (e *Engine) getRequiredNodesForPath(ctx context.Context, graph *Graph, targetNodeID string, sessionData map[string]interface{}) []string {
+	requiredNodes := make([]string, 0)
+	visited := make(map[string]bool)
+
+	// Start from the start node and find all paths to the target node
+	e.findRequiredNodesRecursive(ctx, graph, graph.StartNodeID, targetNodeID, sessionData, visited, &requiredNodes)
+
+	return requiredNodes
+}
+
+// findRequiredNodesRecursive recursively finds all nodes that must be completed to reach the target
+func (e *Engine) findRequiredNodesRecursive(ctx context.Context, graph *Graph, currentNodeID, targetNodeID string, sessionData map[string]interface{}, visited map[string]bool, requiredNodes *[]string) {
+	if currentNodeID == targetNodeID {
+		return // Reached target
+	}
+
+	if visited[currentNodeID] {
+		return // Already visited this path
+	}
+
+	visited[currentNodeID] = true
+
+	// Add current node to required nodes (except start node)
+	if currentNodeID != graph.StartNodeID {
+		*requiredNodes = append(*requiredNodes, currentNodeID)
+	}
+
+	// Check all outgoing edges from current node
+	for _, edge := range graph.Edges {
+		if edge.FromNodeID == currentNodeID {
+			if e.evaluateEdgeCondition(edge.Condition, sessionData) {
+				// This edge is valid, continue the path
+				e.findRequiredNodesRecursive(ctx, graph, edge.ToNodeID, targetNodeID, sessionData, visited, requiredNodes)
+			}
+		}
+	}
 }
 
 // evaluateEdgeCondition evaluates whether an edge condition is met
@@ -340,4 +512,62 @@ func compareNumbers(a, b interface{}) int {
 		return 1
 	}
 	return 0
+}
+
+// GetFirstMissingNode returns the ID of the first missing node that needs to be completed
+func (e *Engine) GetFirstMissingNode(ctx context.Context, graph *Graph, missingNodeNames []string, sessionData map[string]interface{}) string {
+	// Get user type to determine the correct order
+	userType, hasUserType := sessionData["user_type"]
+	if !hasUserType {
+		return ""
+	}
+
+	// Define the preferred order for each user type
+	var preferredOrder []string
+	if userType == "individual" {
+		preferredOrder = []string{
+			"User Type Selection",
+			"Personal Information",
+			"Contact Information",
+			"Identity Documents",
+			"Bank Details",
+			"Document Upload",
+		}
+	} else if userType == "company" {
+		preferredOrder = []string{
+			"User Type Selection",
+			"Business Type",
+			"Company Information",
+			"Contact Information",
+			"Identity Documents",
+			"Tax Information",
+			"Bank Details",
+			"Document Upload",
+		}
+	}
+
+	// Find the first missing node in the preferred order
+	for _, preferredNodeName := range preferredOrder {
+		for _, missingNodeName := range missingNodeNames {
+			if preferredNodeName == missingNodeName {
+				// Find the node ID for this name
+				for nodeID, node := range graph.Nodes {
+					if node.Name == missingNodeName {
+						return nodeID
+					}
+				}
+			}
+		}
+	}
+
+	// Fallback: return the first missing node found
+	if len(missingNodeNames) > 0 {
+		for nodeID, node := range graph.Nodes {
+			if node.Name == missingNodeNames[0] {
+				return nodeID
+			}
+		}
+	}
+
+	return ""
 }

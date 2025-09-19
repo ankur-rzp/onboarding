@@ -1,0 +1,1188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Onboarding Admin Dashboard</title>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        #network {
+            width: 100%;
+            height: 700px;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        }
+        
+        .node-status {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        .status-completed { 
+            background: linear-gradient(135deg, #10b981, #059669);
+            animation: pulse-green 2s infinite;
+        }
+        .status-current { 
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            animation: pulse-blue 2s infinite;
+        }
+        .status-pending { 
+            background: linear-gradient(135deg, #6b7280, #4b5563);
+        }
+        .status-failed { 
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            animation: pulse-red 2s infinite;
+        }
+        
+        @keyframes pulse-green {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.2); opacity: 0.8; }
+        }
+        
+        @keyframes pulse-blue {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.2); opacity: 0.8; }
+        }
+        
+        @keyframes pulse-red {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.2); opacity: 0.8; }
+        }
+        
+        .graph-container {
+            position: relative;
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e5e7eb;
+        }
+        
+        .graph-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid #f1f5f9;
+        }
+        
+        .graph-title {
+            font-size: 24px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .graph-stats {
+            display: flex;
+            gap: 16px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+            padding: 12px 16px;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+            text-align: center;
+            min-width: 80px;
+        }
+        
+        .stat-number {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1e293b;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .graph-controls {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+            align-items: center;
+        }
+        
+        .control-btn {
+            padding: 8px 16px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            background: white;
+            color: #64748b;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .control-btn:hover {
+            border-color: #3b82f6;
+            color: #3b82f6;
+            transform: translateY(-1px);
+        }
+        
+        .control-btn.active {
+            background: #3b82f6;
+            border-color: #3b82f6;
+            color: white;
+        }
+        
+        .legend {
+            display: flex;
+            gap: 20px;
+            margin-top: 16px;
+            padding: 16px;
+            background: #f8fafc;
+            border-radius: 8px;
+            border: 1px solid #e2e8f0;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            color: #64748b;
+        }
+        
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 4px;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .start-node { background: linear-gradient(135deg, #10b981, #059669); }
+        .input-node { background: linear-gradient(135deg, #3b82f6, #1d4ed8); }
+        .validation-node { background: linear-gradient(135deg, #f59e0b, #d97706); }
+        .decision-node { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+        .end-node { background: linear-gradient(135deg, #ef4444, #dc2626); }
+        
+        .node-tooltip {
+            position: absolute;
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+            z-index: 1000;
+            max-width: 300px;
+            font-size: 14px;
+            display: none;
+        }
+        
+        .tooltip-title {
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+        
+        .tooltip-content {
+            color: #64748b;
+            line-height: 1.5;
+        }
+        
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            z-index: 100;
+        }
+        
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #e2e8f0;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .graph-error {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 400px;
+            color: #ef4444;
+            text-align: center;
+        }
+        
+        .error-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        
+        .error-message {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        
+        .error-details {
+            font-size: 14px;
+            color: #64748b;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div class="min-h-screen">
+        <!-- Header -->
+        <header class="bg-white shadow-sm border-b">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between items-center py-4">
+                    <h1 class="text-2xl font-bold text-gray-900">Onboarding Admin Dashboard</h1>
+                    <div class="flex space-x-4">
+                        <button onclick="refreshData()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+                            Refresh
+                        </button>
+                        <button onclick="toggleView()" class="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700">
+                            <span id="view-toggle">Switch to Sessions</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <!-- Graph View -->
+            <div id="graph-view" class="space-y-6">
+                <div class="graph-container">
+                    <div class="graph-header">
+                        <h2 class="graph-title">Graph Visualization</h2>
+                        <div class="graph-stats">
+                            <div class="stat-card">
+                                <div class="stat-number" id="total-nodes">0</div>
+                                <div class="stat-label">Nodes</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-number" id="total-edges">0</div>
+                                <div class="stat-label">Edges</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-number" id="active-sessions">0</div>
+                                <div class="stat-label">Active</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="graph-select" class="block text-sm font-medium text-gray-700 mb-2">Select Graph:</label>
+                        <select id="graph-select" class="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200" onchange="loadGraphVisual()">
+                            <option value="">Loading graphs...</option>
+                        </select>
+                    </div>
+                    
+                    <div class="graph-controls">
+                        <button class="control-btn active" onclick="setLayout('hierarchical')" id="btn-hierarchical">
+                            📊 Hierarchical
+                        </button>
+                        <button class="control-btn" onclick="setLayout('force')" id="btn-force">
+                            🌐 Force Directed
+                        </button>
+                        <button class="control-btn" onclick="setLayout('circular')" id="btn-circular">
+                            ⭕ Circular
+                        </button>
+                        <button class="control-btn" onclick="fitNetwork()">
+                            🔍 Fit to Screen
+                        </button>
+                        <button class="control-btn" onclick="resetNetwork()">
+                            🔄 Reset View
+                        </button>
+                    </div>
+                    
+                    <div style="position: relative;">
+                        <div id="network"></div>
+                        <div class="loading-overlay" id="graph-loading">
+                            <div class="loading-spinner"></div>
+                        </div>
+                        <div class="graph-error hidden" id="graph-error">
+                            <div class="error-icon">⚠️</div>
+                            <div class="error-message">Failed to load graph</div>
+                            <div class="error-details" id="error-details">Please try again</div>
+                        </div>
+                    </div>
+                    
+                    <div class="legend">
+                        <div class="legend-item">
+                            <div class="legend-color start-node"></div>
+                            <span>Start Node</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color input-node"></div>
+                            <span>Input Node</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color validation-node"></div>
+                            <span>Validation Node</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color decision-node"></div>
+                            <span>Decision Node</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color end-node"></div>
+                            <span>End Node</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sessions View -->
+            <div id="sessions-view" class="space-y-6 hidden">
+                <div class="bg-white rounded-lg shadow p-6">
+                    <h2 class="text-lg font-semibold text-gray-900 mb-4">Active Sessions</h2>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Session ID</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User ID</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Node</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Progress</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="sessions-table" class="bg-white divide-y divide-gray-200">
+                                <!-- Sessions will be populated here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Session Details Modal -->
+        <div id="session-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden">
+            <div class="flex items-center justify-center min-h-screen p-4">
+                <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+                    <div class="p-6">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-lg font-semibold text-gray-900">Session Details</h3>
+                            <button onclick="closeSessionModal()" class="text-gray-400 hover:text-gray-600">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                            </button>
+                        </div>
+                        <div id="session-details-content">
+                            <!-- Session details will be populated here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Node Tooltip -->
+        <div class="node-tooltip" id="node-tooltip">
+            <div class="tooltip-title" id="tooltip-title"></div>
+            <div class="tooltip-content" id="tooltip-content"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080/api/v1';
+        let currentGraph = null;
+        let network = null;
+        let currentView = 'graph'; // 'graph' or 'sessions'
+        let currentLayout = 'hierarchical';
+        let tooltip = null;
+
+        // Initialize dashboard
+        async function init() {
+            await loadGraphs();
+            await loadSessions();
+            setupEventListeners();
+        }
+
+        // Load available graphs
+        async function loadGraphs() {
+            try {
+                const response = await axios.get(`${API_BASE}/graphs`);
+                const graphs = response.data;
+                
+                const select = document.getElementById('graph-select');
+                select.innerHTML = '<option value="">Select a graph...</option>';
+                
+                graphs.forEach(graph => {
+                    const option = document.createElement('option');
+                    option.value = graph.id;
+                    option.textContent = graph.name;
+                    select.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Failed to load graphs:', error);
+            }
+        }
+
+        // Load graph visualization
+        async function loadGraphVisual() {
+            const graphId = document.getElementById('graph-select').value;
+            if (!graphId) return;
+
+            showGraphLoading();
+            hideGraphError();
+
+            try {
+                const response = await axios.get(`${API_BASE}/admin/graphs/${graphId}/visual`);
+                currentGraph = response.data;
+                await renderGraph();
+                updateGraphStats();
+                hideGraphLoading();
+            } catch (error) {
+                console.error('Failed to load graph visual:', error);
+                showGraphError(error.message);
+                hideGraphLoading();
+            }
+        }
+
+        // Render graph using vis-network
+        async function renderGraph() {
+            if (!currentGraph) return;
+
+            const container = document.getElementById('network');
+            
+            // Prepare nodes with enhanced styling
+            const nodes = new vis.DataSet(
+                currentGraph.nodes.map(node => ({
+                    id: node.id,
+                    label: node.name,
+                    color: {
+                        background: getNodeColor(node.type),
+                        border: getNodeBorderColor(node.type),
+                        highlight: {
+                            background: getNodeHighlightColor(node.type),
+                            border: getNodeBorderColor(node.type)
+                        },
+                        hover: {
+                            background: getNodeHoverColor(node.type),
+                            border: getNodeBorderColor(node.type)
+                        }
+                    },
+                    shape: getNodeShape(node.type),
+                    size: getNodeSize(node.type),
+                    font: {
+                        color: '#ffffff',
+                        size: 14,
+                        face: 'Inter, sans-serif',
+                        strokeWidth: 2,
+                        strokeColor: '#1e293b'
+                    },
+                    borderWidth: 3,
+                    shadow: {
+                        enabled: true,
+                        color: 'rgba(0,0,0,0.2)',
+                        size: 10,
+                        x: 2,
+                        y: 2
+                    },
+                    title: createNodeTooltip(node)
+                }))
+            );
+
+            // Prepare edges with enhanced styling
+            const edges = new vis.DataSet(
+                currentGraph.edges.map(edge => ({
+                    id: edge.id,
+                    from: edge.from,
+                    to: edge.to,
+                    label: edge.description || '',
+                    arrows: {
+                        to: {
+                            enabled: true,
+                            scaleFactor: 1.2,
+                            type: 'arrow'
+                        }
+                    },
+                    color: {
+                        color: '#64748b',
+                        highlight: '#3b82f6',
+                        hover: '#1d4ed8'
+                    },
+                    width: 3,
+                    smooth: {
+                        type: 'curvedCW',
+                        roundness: 0.2
+                    },
+                    font: {
+                        color: '#64748b',
+                        size: 12,
+                        face: 'Inter, sans-serif'
+                    }
+                }))
+            );
+
+            // Create network
+            const data = { nodes, edges };
+            const options = getNetworkOptions();
+
+            network = new vis.Network(container, data, options);
+
+            // Add event listeners
+            setupNetworkEventListeners();
+            
+            // Fit network to container
+            setTimeout(() => {
+                network.fit();
+            }, 100);
+        }
+
+        // Get node color based on type
+        function getNodeColor(type) {
+            const colors = {
+                'start': '#10b981',    // green
+                'input': '#3b82f6',    // blue
+                'validation': '#f59e0b', // yellow
+                'decision': '#8b5cf6',  // purple
+                'end': '#ef4444'        // red
+            };
+            return colors[type] || '#6b7280'; // gray default
+        }
+
+        // Get node border color
+        function getNodeBorderColor(type) {
+            const colors = {
+                'start': '#059669',
+                'input': '#1d4ed8',
+                'validation': '#d97706',
+                'decision': '#7c3aed',
+                'end': '#dc2626'
+            };
+            return colors[type] || '#4b5563';
+        }
+
+        // Get node highlight color
+        function getNodeHighlightColor(type) {
+            const colors = {
+                'start': '#34d399',
+                'input': '#60a5fa',
+                'validation': '#fbbf24',
+                'decision': '#a78bfa',
+                'end': '#f87171'
+            };
+            return colors[type] || '#9ca3af';
+        }
+
+        // Get node hover color
+        function getNodeHoverColor(type) {
+            const colors = {
+                'start': '#6ee7b7',
+                'input': '#93c5fd',
+                'validation': '#fcd34d',
+                'decision': '#c4b5fd',
+                'end': '#fca5a5'
+            };
+            return colors[type] || '#d1d5db';
+        }
+
+        // Get node shape based on type
+        function getNodeShape(type) {
+            const shapes = {
+                'start': 'ellipse',
+                'input': 'box',
+                'validation': 'diamond',
+                'decision': 'diamond',
+                'end': 'ellipse'
+            };
+            return shapes[type] || 'box';
+        }
+
+        // Get node size based on type
+        function getNodeSize(type) {
+            const sizes = {
+                'start': 30,
+                'input': 25,
+                'validation': 20,
+                'decision': 20,
+                'end': 30
+            };
+            return sizes[type] || 25;
+        }
+
+        // Create enhanced tooltip for nodes
+        function createNodeTooltip(node) {
+            const fields = node.fields ? node.fields.map(f => f.name).join(', ') : 'No fields';
+            return `
+                <div style="font-family: Inter, sans-serif; max-width: 300px;">
+                    <div style="font-weight: 700; font-size: 16px; color: #1e293b; margin-bottom: 8px;">
+                        ${node.name}
+                    </div>
+                    <div style="color: #64748b; margin-bottom: 8px;">
+                        ${node.description}
+                    </div>
+                    <div style="color: #64748b; font-size: 12px;">
+                        <strong>Type:</strong> ${node.type}<br>
+                        <strong>Fields:</strong> ${fields}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Get network options based on current layout
+        function getNetworkOptions() {
+            const baseOptions = {
+                physics: {
+                    enabled: true,
+                    stabilization: { 
+                        iterations: 200,
+                        updateInterval: 50
+                    },
+                    barnesHut: {
+                        gravitationalConstant: -2000,
+                        centralGravity: 0.3,
+                        springLength: 95,
+                        springConstant: 0.04,
+                        damping: 0.09
+                    }
+                },
+                interaction: {
+                    hover: true,
+                    selectConnectedEdges: false,
+                    tooltipDelay: 200,
+                    hideEdgesOnDrag: false,
+                    hideNodesOnDrag: false
+                },
+                nodes: {
+                    font: {
+                        multi: 'html'
+                    }
+                },
+                edges: {
+                    font: {
+                        multi: 'html'
+                    }
+                }
+            };
+
+            switch (currentLayout) {
+                case 'hierarchical':
+                    return {
+                        ...baseOptions,
+                        layout: {
+                            improvedLayout: true,
+                            hierarchical: {
+                                enabled: true,
+                                direction: 'UD',
+                                sortMethod: 'directed',
+                                nodeSpacing: 200,
+                                levelSeparation: 150,
+                                treeSpacing: 200
+                            }
+                        },
+                        physics: {
+                            enabled: false
+                        }
+                    };
+                case 'force':
+                    return {
+                        ...baseOptions,
+                        layout: {
+                            improvedLayout: false
+                        },
+                        physics: {
+                            enabled: true,
+                            stabilization: { iterations: 200 }
+                        }
+                    };
+                case 'circular':
+                    return {
+                        ...baseOptions,
+                        layout: {
+                            improvedLayout: false,
+                            randomSeed: 2
+                        },
+                        physics: {
+                            enabled: false
+                        }
+                    };
+                default:
+                    return baseOptions;
+            }
+        }
+
+        // Setup network event listeners
+        function setupNetworkEventListeners() {
+            // Click event
+            network.on('click', function(params) {
+                if (params.nodes.length > 0) {
+                    const nodeId = params.nodes[0];
+                    const node = currentGraph.nodes.find(n => n.id === nodeId);
+                    if (node) {
+                        showNodeDetails(node);
+                    }
+                }
+            });
+
+            // Hover events for custom tooltip
+            network.on('hoverNode', function(params) {
+                const node = currentGraph.nodes.find(n => n.id === params.node);
+                if (node) {
+                    showCustomTooltip(params.event, node);
+                }
+            });
+
+            network.on('blurNode', function() {
+                hideCustomTooltip();
+            });
+
+            // Animation events
+            network.on('stabilizationIterationsDone', function() {
+                network.fit();
+            });
+        }
+
+        // Show custom tooltip
+        function showCustomTooltip(event, node) {
+            const tooltip = document.getElementById('node-tooltip');
+            const title = document.getElementById('tooltip-title');
+            const content = document.getElementById('tooltip-content');
+            
+            title.textContent = node.name;
+            content.innerHTML = `
+                <div style="margin-bottom: 8px;">${node.description}</div>
+                <div style="font-size: 12px; color: #64748b;">
+                    <strong>Type:</strong> ${node.type}<br>
+                    <strong>Fields:</strong> ${node.fields ? node.fields.length : 0}
+                </div>
+            `;
+            
+            tooltip.style.left = (event.pageX + 10) + 'px';
+            tooltip.style.top = (event.pageY - 10) + 'px';
+            tooltip.style.display = 'block';
+        }
+
+        // Hide custom tooltip
+        function hideCustomTooltip() {
+            const tooltip = document.getElementById('node-tooltip');
+            tooltip.style.display = 'none';
+        }
+
+        // Layout control functions
+        function setLayout(layout) {
+            currentLayout = layout;
+            
+            // Update button states
+            document.querySelectorAll('.control-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.getElementById(`btn-${layout}`).classList.add('active');
+            
+            // Re-render graph with new layout
+            if (network && currentGraph) {
+                const options = getNetworkOptions();
+                network.setOptions(options);
+                setTimeout(() => {
+                    network.fit();
+                }, 100);
+            }
+        }
+
+        // Fit network to screen
+        function fitNetwork() {
+            if (network) {
+                network.fit({
+                    animation: {
+                        duration: 1000,
+                        easingFunction: 'easeInOutQuad'
+                    }
+                });
+            }
+        }
+
+        // Reset network view
+        function resetNetwork() {
+            if (network) {
+                network.setOptions({
+                    physics: {
+                        enabled: true,
+                        stabilization: { iterations: 200 }
+                    }
+                });
+                setTimeout(() => {
+                    network.fit();
+                }, 100);
+            }
+        }
+
+        // Update graph statistics
+        function updateGraphStats() {
+            if (currentGraph) {
+                document.getElementById('total-nodes').textContent = currentGraph.nodes.length;
+                document.getElementById('total-edges').textContent = currentGraph.edges.length;
+                // Active sessions count would be updated from sessions data
+            }
+        }
+
+        // Show/hide loading states
+        function showGraphLoading() {
+            document.getElementById('graph-loading').style.display = 'flex';
+        }
+
+        function hideGraphLoading() {
+            document.getElementById('graph-loading').style.display = 'none';
+        }
+
+        function showGraphError(message) {
+            document.getElementById('error-details').textContent = message;
+            document.getElementById('graph-error').classList.remove('hidden');
+        }
+
+        function hideGraphError() {
+            document.getElementById('graph-error').classList.add('hidden');
+        }
+
+        // Show node details
+        function showNodeDetails(node) {
+            const modal = document.getElementById('session-modal');
+            const content = document.getElementById('session-details-content');
+            
+            content.innerHTML = `
+                <div class="space-y-4">
+                    <div>
+                        <h4 class="font-semibold text-gray-900">Node Information</h4>
+                        <div class="mt-2 space-y-2">
+                            <p><strong>Name:</strong> ${node.name}</p>
+                            <p><strong>Type:</strong> ${node.type}</p>
+                            <p><strong>Description:</strong> ${node.description}</p>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h4 class="font-semibold text-gray-900">Fields</h4>
+                        <div class="mt-2">
+                            ${node.fields.map(field => `
+                                <div class="border rounded p-2 mb-2">
+                                    <p><strong>${field.name}:</strong> ${field.type} ${field.required ? '(Required)' : '(Optional)'}</p>
+                                    ${field.options ? `<p><strong>Options:</strong> ${field.options.join(', ')}</p>` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h4 class="font-semibold text-gray-900">Validation Rules</h4>
+                        <div class="mt-2">
+                            <p><strong>Required Fields:</strong> ${node.validation.required_fields.join(', ')}</p>
+                            ${node.validation.conditions ? `
+                                <p><strong>Conditions:</strong></p>
+                                <ul class="list-disc list-inside">
+                                    ${node.validation.conditions.map(condition => `
+                                        <li>${condition.field} ${condition.operator} ${condition.value} - ${condition.rule}</li>
+                                    `).join('')}
+                                </ul>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            modal.classList.remove('hidden');
+        }
+
+        // Load sessions
+        async function loadSessions() {
+            try {
+                const response = await axios.get(`${API_BASE}/admin/sessions`);
+                const sessions = response.data;
+                renderSessions(sessions);
+            } catch (error) {
+                console.error('Failed to load sessions:', error);
+            }
+        }
+
+        // Render sessions table
+        function renderSessions(sessions) {
+            const tbody = document.getElementById('sessions-table');
+            tbody.innerHTML = '';
+
+            sessions.forEach(session => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">${session.id.substring(0, 8)}...</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${session.user_id}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${session.current_node_name || 'Unknown'}</td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusClass(session.status)}">
+                            ${session.status}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <div class="flex items-center">
+                            <div class="w-full bg-gray-200 rounded-full h-2 mr-2">
+                                <div class="bg-blue-600 h-2 rounded-full" style="width: ${session.progress || 0}%"></div>
+                            </div>
+                            <span class="text-xs text-gray-500">${session.progress || 0}%</span>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <button onclick="showSessionDetails('${session.id}')" class="text-blue-600 hover:text-blue-900">
+                            View Details
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        // Get status CSS class
+        function getStatusClass(status) {
+            const classes = {
+                'active': 'bg-green-100 text-green-800',
+                'completed': 'bg-blue-100 text-blue-800',
+                'failed': 'bg-red-100 text-red-800',
+                'paused': 'bg-yellow-100 text-yellow-800'
+            };
+            return classes[status] || 'bg-gray-100 text-gray-800';
+        }
+
+        // Show session details
+        async function showSessionDetails(sessionId) {
+            try {
+                const response = await axios.get(`${API_BASE}/admin/sessions/${sessionId}/details`);
+                const details = response.data;
+                renderSessionDetails(details);
+            } catch (error) {
+                console.error('Failed to load session details:', error);
+            }
+        }
+
+        // Render session details
+        function renderSessionDetails(details) {
+            console.log('Rendering session details:', details);
+            const modal = document.getElementById('session-modal');
+            const content = document.getElementById('session-details-content');
+            
+            // Build node data display
+            console.log('Node data:', details.node_data);
+            console.log('Uploaded files:', details.uploaded_files);
+            const nodeDataHtml = Object.values(details.node_data || {}).map(node => {
+                console.log('Processing node:', node.name, 'visited:', node.visited, 'data:', node.data);
+                const statusClass = node.visited ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200';
+                const statusText = node.visited ? 'Completed' : 'Not Visited';
+                const statusIcon = node.visited ? '✓' : '○';
+                const currentIndicator = node.is_current ? '<span class="ml-2 px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">Current</span>' : '';
+                
+                return `
+                    <div class="border rounded-lg p-4 ${statusClass}">
+                        <div class="flex justify-between items-start mb-3">
+                            <div>
+                                <h5 class="font-semibold text-gray-900">${node.name} ${currentIndicator}</h5>
+                                <p class="text-sm text-gray-600">${node.description}</p>
+                            </div>
+                            <div class="text-right">
+                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${node.visited ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}">
+                                    ${statusIcon} ${statusText}
+                                </span>
+                            </div>
+                        </div>
+                        
+                        ${node.visited ? `
+                            <div class="mt-3">
+                                <h6 class="text-sm font-medium text-gray-700 mb-2">Data Entered:</h6>
+                                <div class="bg-white p-3 rounded border">
+                                    ${Object.keys(node.data).length > 0 ? 
+                                        Object.entries(node.data).map(([key, value]) => `
+                                            <div class="mb-2">
+                                                <span class="font-medium text-gray-600">${key}:</span>
+                                                <span class="ml-2 text-gray-900">${formatFieldValue(value)}</span>
+                                            </div>
+                                        `).join('') : 
+                                        '<p class="text-gray-500 text-sm">No data entered</p>'
+                                    }
+                                </div>
+                                ${node.visit_time ? `<p class="text-xs text-gray-500 mt-2">Visited: ${new Date(node.visit_time).toLocaleString()}</p>` : ''}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }).join('');
+            
+            // Build uploaded files display
+            const uploadedFilesHtml = details.uploaded_files && details.uploaded_files.length > 0 ? 
+                details.uploaded_files.map(file => `
+                    <div class="border rounded p-3 bg-blue-50">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <p class="font-medium text-gray-900">${file.file_name}</p>
+                                <p class="text-sm text-gray-600">Field: ${file.field_id}</p>
+                                <p class="text-sm text-gray-600">Size: ${formatFileSize(file.file_size)}</p>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-xs text-gray-500">${new Date(file.uploaded_at).toLocaleString()}</p>
+                                <button onclick="downloadFile('${file.file_path}', '${file.file_name}')" 
+                                        class="mt-1 text-blue-600 hover:text-blue-800 text-sm">
+                                    Download
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `).join('') : 
+                '<p class="text-gray-500 text-sm">No files uploaded</p>';
+            
+            content.innerHTML = `
+                <div class="space-y-6">
+                    <div>
+                        <h4 class="font-semibold text-gray-900">Session Information</h4>
+                        <div class="mt-2 grid grid-cols-2 gap-4">
+                            <p><strong>Session ID:</strong> ${details.session.id}</p>
+                            <p><strong>User ID:</strong> ${details.session.user_id}</p>
+                            <p><strong>Status:</strong> ${details.session.status}</p>
+                            <p><strong>Created:</strong> ${new Date(details.session.created_at).toLocaleString()}</p>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h4 class="font-semibold text-gray-900">Current Node</h4>
+                        <div class="mt-2 p-4 bg-gray-50 rounded-lg">
+                            <p><strong>Node:</strong> ${details.current_node.name}</p>
+                            <p><strong>Type:</strong> ${details.current_node.type}</p>
+                            <p><strong>Description:</strong> ${details.current_node.description}</p>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h4 class="font-semibold text-gray-900">All Nodes & Data</h4>
+                        <div class="mt-2 space-y-3">
+                            ${nodeDataHtml}
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h4 class="font-semibold text-gray-900">Uploaded Files</h4>
+                        <div class="mt-2 space-y-2">
+                            ${uploadedFilesHtml}
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h4 class="font-semibold text-gray-900">Session History</h4>
+                        <div class="mt-2 space-y-2">
+                            ${details.history.map(step => `
+                                <div class="border rounded p-3">
+                                    <div class="flex justify-between items-start">
+                                        <div>
+                                            <p><strong>Action:</strong> ${step.action}</p>
+                                            <p><strong>Timestamp:</strong> ${new Date(step.timestamp).toLocaleString()}</p>
+                                        </div>
+                                        <div class="text-right">
+                                            <p><strong>Node ID:</strong> ${step.node_id}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            modal.classList.remove('hidden');
+        }
+
+        // Close session modal
+        function closeSessionModal() {
+            document.getElementById('session-modal').classList.add('hidden');
+        }
+
+        // Format field value for display
+        function formatFieldValue(value) {
+            if (value === null || value === undefined) {
+                return 'Not provided';
+            }
+            if (typeof value === 'object') {
+                return JSON.stringify(value, null, 2);
+            }
+            if (typeof value === 'string' && value.length > 100) {
+                return value.substring(0, 100) + '...';
+            }
+            return String(value);
+        }
+
+        // Format file size for display
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // Download file function
+        function downloadFile(filePath, fileName) {
+            // Create a temporary link to download the file
+            const link = document.createElement('a');
+            link.href = `/api/v1/files/${encodeURIComponent(filePath)}`;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // Toggle view between graph and sessions
+        function toggleView() {
+            const graphView = document.getElementById('graph-view');
+            const sessionsView = document.getElementById('sessions-view');
+            const toggleButton = document.getElementById('view-toggle');
+            
+            if (currentView === 'graph') {
+                graphView.classList.add('hidden');
+                sessionsView.classList.remove('hidden');
+                toggleButton.textContent = 'Switch to Graph';
+                currentView = 'sessions';
+            } else {
+                graphView.classList.remove('hidden');
+                sessionsView.classList.add('hidden');
+                toggleButton.textContent = 'Switch to Sessions';
+                currentView = 'graph';
+            }
+        }
+
+        // Refresh data
+        async function refreshData() {
+            if (currentView === 'graph') {
+                await loadGraphs();
+                await loadGraphVisual();
+            } else {
+                await loadSessions();
+            }
+        }
+
+        // Setup event listeners
+        function setupEventListeners() {
+            // Auto-refresh every 30 seconds
+            setInterval(refreshData, 30000);
+        }
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

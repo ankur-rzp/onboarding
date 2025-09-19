@@ -420,13 +420,25 @@ func CreateUnifiedOnboardingGraph() *types.Graph {
 	})
 	graph.Edges[contactInfoToIdentity.ID] = contactInfoToIdentity
 
-	// Identity -> Tax Info
+	// Identity -> Tax Info (for companies only)
 	identityToTaxInfo := types.NewEdge(identityNode.ID, taxInfoNode.ID, types.EdgeCondition{
-		Type: "always",
+		Type:     "field_value",
+		Field:    "user_type",
+		Operator: "eq",
+		Value:    "company",
 	})
 	graph.Edges[identityToTaxInfo.ID] = identityToTaxInfo
 
-	// Tax Info -> Bank Details
+	// Identity -> Bank Details (for individuals, skip tax info)
+	identityToBankDetails := types.NewEdge(identityNode.ID, bankDetailsNode.ID, types.EdgeCondition{
+		Type:     "field_value",
+		Field:    "user_type",
+		Operator: "eq",
+		Value:    "individual",
+	})
+	graph.Edges[identityToBankDetails.ID] = identityToBankDetails
+
+	// Tax Info -> Bank Details (for companies)
 	taxInfoToBankDetails := types.NewEdge(taxInfoNode.ID, bankDetailsNode.ID, types.EdgeCondition{
 		Type: "always",
 	})
@@ -438,7 +450,7 @@ func CreateUnifiedOnboardingGraph() *types.Graph {
 	})
 	graph.Edges[bankDetailsToDocumentUpload.ID] = bankDetailsToDocumentUpload
 
-	// Document Upload -> Completion
+	// Document Upload -> Completion (always available - activation rules will determine if completion is valid)
 	documentUploadToCompletion := types.NewEdge(documentUploadNode.ID, completionNode.ID, types.EdgeCondition{
 		Type: "always",
 	})

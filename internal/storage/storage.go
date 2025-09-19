@@ -23,6 +23,7 @@ type Storage interface {
 	UpdateSession(ctx context.Context, session *types.Session) error
 	DeleteSession(ctx context.Context, sessionID string) error
 	ListSessions(ctx context.Context, userID string) ([]*types.Session, error)
+	ListAllSessions(ctx context.Context) ([]*types.Session, error)
 
 	// Graph operations
 	SaveGraph(ctx context.Context, graph *types.Graph) error
@@ -287,6 +288,51 @@ func (s *PostgresRedisStorage) ListSessions(ctx context.Context, userID string) 
 	rows, err := s.db.QueryContext(ctx, query, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list sessions: %w", err)
+	}
+	defer rows.Close()
+
+	var sessions []*types.Session
+	for rows.Next() {
+		var session types.Session
+		var dataJSON, historyJSON []byte
+		var completedAt sql.NullTime
+
+		err := rows.Scan(
+			&session.ID, &session.UserID, &session.GraphID, &session.CurrentNodeID,
+			&dataJSON, &historyJSON, &session.Status, &session.RetryCount,
+			&session.CreatedAt, &session.UpdatedAt, &completedAt)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan session: %w", err)
+		}
+
+		// Unmarshal JSON fields
+		if err := json.Unmarshal(dataJSON, &session.Data); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal session data: %w", err)
+		}
+
+		if err := json.Unmarshal(historyJSON, &session.History); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal session history: %w", err)
+		}
+
+		if completedAt.Valid {
+			session.CompletedAt = &completedAt.Time
+		}
+
+		sessions = append(sessions, &session)
+	}
+
+	return sessions, nil
+}
+
+// ListAllSessions lists all sessions for admin dashboard
+func (s *PostgresRedisStorage) ListAllSessions(ctx context.Context) ([]*types.Session, error) {
+	query := `SELECT id, user_id, graph_id, current_node_id, data, history, status, retry_count, created_at, updated_at, completed_at
+			  FROM sessions ORDER BY created_at DESC`
+
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list all sessions: %w", err)
 	}
 	defer rows.Close()
 

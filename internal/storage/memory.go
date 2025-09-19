@@ -93,6 +93,21 @@ func (m *MemoryStorage) ListSessions(ctx context.Context, userID string) ([]*typ
 	return userSessions, nil
 }
 
+// ListAllSessions lists all sessions for admin dashboard
+func (m *MemoryStorage) ListAllSessions(ctx context.Context) ([]*types.Session, error) {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+
+	var allSessions []*types.Session
+	for _, session := range m.sessions {
+		// Return a copy to avoid race conditions
+		sessionCopy := *session
+		allSessions = append(allSessions, &sessionCopy)
+	}
+
+	return allSessions, nil
+}
+
 // SaveGraph saves a graph to memory
 func (m *MemoryStorage) SaveGraph(ctx context.Context, graph *types.Graph) error {
 	m.mutex.Lock()

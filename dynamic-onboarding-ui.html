@@ -130,6 +130,9 @@
                                 <button type="button" onclick="skipNode()" id="skip-button" class="bg-yellow-600 text-white px-6 py-2 rounded-lg hover:bg-yellow-700" style="display: none;">
                                     ⏭️ Skip for Now
                                 </button>
+                                <button type="button" onclick="checkExistingUploadedFiles()" class="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 text-sm">
+                                    🔍 Check Files
+                                </button>
                             </div>
                         </form>
 
@@ -165,6 +168,7 @@
         let allEdges = [];
         let visitedNodes = new Set();
         let completedNodes = new Set();
+        let eligibleNodes = [];
 
         // Initialize the application
         async function init() {
@@ -184,6 +188,50 @@
             }
             
             await loadGraphs();
+        }
+        
+
+        // Show loading state
+        function showLoader() {
+            // Disable form buttons
+            const buttons = document.querySelectorAll('#node-form button');
+            buttons.forEach(button => {
+                button.disabled = true;
+                button.classList.add('opacity-50', 'cursor-not-allowed');
+            });
+        }
+
+        // Hide loading state
+        function hideLoader() {
+            // Enable form buttons
+            const buttons = document.querySelectorAll('#node-form button');
+            buttons.forEach(button => {
+                button.disabled = false;
+                button.classList.remove('opacity-50', 'cursor-not-allowed');
+            });
+        }
+
+        // Fetch eligible nodes from backend
+        async function fetchEligibleNodes() {
+            if (!currentSession || !currentSession.id) {
+                console.log('No session available to fetch eligible nodes');
+                return;
+            }
+
+            try {
+                const response = await axios.get(`${API_BASE}/sessions/${currentSession.id}/eligible-nodes`);
+                eligibleNodes = response.data.eligible_nodes || [];
+                console.log('Fetched eligible nodes:', eligibleNodes);
+                
+                // Update navigation map with new eligible nodes
+                buildNavigationMap();
+            } catch (error) {
+                console.error('Error fetching eligible nodes:', error);
+                // Fallback: allow all nodes except completion nodes
+                eligibleNodes = allNodes
+                    .filter(node => node.type !== 'end' && node.name !== 'Onboarding Complete')
+                    .map(node => node.id);
+            }
         }
 
         // Load available graphs
@@ -268,8 +316,6 @@
                 const isVisited = visitedNodes.has(node.id);
                 const isCompleted = completedNodes.has(node.id);
                 const isCurrent = currentNode && currentNode.id === node.id;
-                
-                // Check if this node should be available based on current session state
                 const isAvailable = isNodeAvailable(node);
                 
                 let statusClass = 'bg-gray-100 text-gray-600';
@@ -313,17 +359,30 @@
             }).join('');
         }
 
-        // Check if a node is available based on current session state
+        // Check if a node should be available for navigation
         function isNodeAvailable(node) {
-            // Completion/end nodes should never be available for navigation
+            // Hide completion/end nodes - they should never be clickable
             if (node.type === 'end' || node.name === 'Onboarding Complete') {
                 return false;
+            }
+            
+            // If no user type selected, only show User Type Selection
+            if (!currentSession || !currentSession.data || !currentSession.data.user_type) {
+                return node.name === 'User Type Selection';
+            }
+            
+            // Check if this node is in the eligible nodes list
+            if (eligibleNodes && eligibleNodes.length > 0) {
+                return eligibleNodes.includes(node.id);
             }
             
             // If it's the current node, it's always available
             if (currentNode && currentNode.id === node.id) {
                 return true;
             }
+            
+            // Fallback: let backend handle all other navigation logic
+            return true;
             
             // If it's completed, it's available for review
             if (completedNodes.has(node.id)) {
@@ -410,38 +469,33 @@
         // Navigate to a specific node
         async function navigateToNode(nodeId) {
             try {
-                // Find the node
-                const node = allNodes.find(n => n.id === nodeId);
-                if (!node) return;
-
-                // Save current form data before navigating (if there's a current node)
-                if (currentNode && currentNode.id !== nodeId) {
-                    await saveCurrentFormData();
+                showLoader();
+                
+                // Check for ongoing uploads before navigation
+                try {
+                    const uploadsResponse = await axios.get(`${API_BASE}/sessions/${currentSession.id}/uploads`);
+                    const ongoingUploads = uploadsResponse.data.filter(upload => upload.status === 'uploading');
+                    
+                    if (ongoingUploads.length > 0) {
+                        const uploadNames = ongoingUploads.map(upload => upload.file_name).join(', ');
+                        showError(`⚠️ Cannot navigate while uploads are in progress: ${uploadNames}. Please wait for uploads to complete.`);
+                        return;
+                    }
+                } catch (error) {
+                    console.warn('Could not check upload status:', error);
                 }
 
-                // Update UI to show the selected node
-                currentNode = node;
-                visitedNodes.add(nodeId);
-                clearError(); // Clear any previous errors
+                // Tell backend about the navigation - backend will decide if it's allowed
+                await axios.post(`${API_BASE}/sessions/${currentSession.id}/navigate/${nodeId}`);
                 
-                // Update UI
-                updateCurrentNodeHeader();
-                generateFormFields();
-                buildNavigationMap();
-                updateProgress();
-                updateDataSummary();
-                
-                // Let backend handle completion detection - check if current node is completion node
-                const currentNavNode = allNodes.find(node => node.id === currentSession.current_node_id);
-                if (currentNavNode && (currentNavNode.type === 'end' || currentNavNode.name === 'Onboarding Complete')) {
-                    console.log('Backend navigated to completion node, showing completion screen');
-                    showCompletion();
-                }
-                
-                console.log(`Navigated to node: ${node.name} (${nodeId})`);
+                // Reload current node from backend to get the actual state
+                await loadCurrentNode();
                 
             } catch (error) {
                 console.error('Error navigating to node:', error);
+                showError('Error navigating to node: ' + (error.response?.data?.message || error.message));
+            } finally {
+                hideLoader();
             }
         }
 
@@ -557,6 +611,17 @@
         // Load current node from session
         async function loadCurrentNode() {
             try {
+                // First check the session status
+                const sessionResponse = await axios.get(`${API_BASE}/sessions/${currentSession.id}`);
+                const session = sessionResponse.data;
+                
+                // If session is completed, show completion screen
+                if (session.status === 'completed') {
+                    console.log('Session is completed, showing completion screen');
+                    showCompletion();
+                    return;
+                }
+                
                 const response = await axios.get(`${API_BASE}/sessions/${currentSession.id}/current`);
                 const node = response.data;
                 
@@ -565,6 +630,11 @@
                 
                 // Also get the full session to understand available paths
                 await loadSessionState();
+                
+                // Only fetch eligible nodes if we don't have them yet or if this is a new session
+                if (!eligibleNodes || eligibleNodes.length === 0) {
+                    await fetchEligibleNodes();
+                }
                 
                 updateCurrentNodeHeader();
                 generateFormFields();
@@ -664,7 +734,8 @@
                 // to ensure the DOM is fully updated
                 setTimeout(() => {
                     populateFormWithExistingData();
-                }, 10);
+                    checkExistingUploadedFiles();
+                }, 100); // Increased delay to ensure DOM is fully ready
             } else {
                 formFields.innerHTML = '<p class="text-gray-600 text-center py-8">No input fields required for this step.</p>';
             }
@@ -756,7 +827,47 @@
                     return `
                         <div class="space-y-2">
                             ${label}
-                            <input type="file" name="${field.id}" class="${baseClasses} ${requiredClass}" ${field.required ? 'required' : ''}>
+                            <div class="file-upload-container" data-field-id="${field.id}">
+                                <input type="file" name="${field.id}" class="${baseClasses} ${requiredClass}" ${field.required ? 'required' : ''} onchange="handleFileSelect(this, '${field.id}')">
+                                <input type="hidden" name="${field.id}_status" value="">
+                                <input type="hidden" name="${field.id}_filename" value="">
+                                <div class="filename-display mt-2 hidden" id="filename-${field.id}">
+                                    <div class="flex items-center justify-between bg-green-50 border border-green-200 rounded-lg p-3">
+                                        <div class="flex items-center">
+                                            <svg class="w-5 h-5 text-green-600 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                                                <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path>
+                                            </svg>
+                                            <span class="text-sm text-green-800 font-medium" id="filename-text-${field.id}"></span>
+                                        </div>
+                                        <button type="button" onclick="changeFile('${field.id}')" class="text-xs text-green-600 hover:text-green-800 underline">Change</button>
+                                    </div>
+                                </div>
+                                <div class="upload-progress mt-2 hidden" id="progress-${field.id}">
+                                    <div class="flex items-center space-x-2">
+                                        <div class="flex-1 bg-gray-200 rounded-full h-2">
+                                            <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: 0%" id="progress-bar-${field.id}"></div>
+                                        </div>
+                                        <span class="text-sm text-gray-600" id="progress-text-${field.id}">0%</span>
+                                    </div>
+                                    <div class="text-xs text-gray-500 mt-1" id="progress-status-${field.id}">Ready to upload</div>
+                                </div>
+                                <div class="upload-success mt-2 hidden" id="success-${field.id}">
+                                    <div class="flex items-center text-green-600">
+                                        <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+                                        </svg>
+                                        <span class="text-sm">Upload completed</span>
+                                    </div>
+                                </div>
+                                <div class="upload-error mt-2 hidden" id="error-${field.id}">
+                                    <div class="flex items-center text-red-600">
+                                        <svg class="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+                                        </svg>
+                                        <span class="text-sm" id="error-text-${field.id}">Upload failed</span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     `;
                 default:
@@ -817,6 +928,405 @@
                 await navigateToNode(nextNode.id);
             } else {
                 showCompletion();
+            }
+        }
+
+        // Handle file selection and start upload
+        async function handleFileSelect(input, fieldId) {
+            console.log('handleFileSelect called with fieldId:', fieldId);
+            const file = input.files[0];
+            if (!file) {
+                console.log('No file selected');
+                return;
+            }
+
+            console.log('File selected:', file.name, 'Size:', file.size);
+            
+            // Show progress UI
+            showUploadProgress(fieldId);
+            
+            // Start async upload
+            await uploadFileAsync(file, fieldId);
+        }
+
+        // Show upload progress UI
+        function showUploadProgress(fieldId) {
+            console.log('showUploadProgress called with fieldId:', fieldId);
+            const progressDiv = document.getElementById(`progress-${fieldId}`);
+            const successDiv = document.getElementById(`success-${fieldId}`);
+            const errorDiv = document.getElementById(`error-${fieldId}`);
+            
+            console.log('Progress div found:', progressDiv);
+            console.log('Success div found:', successDiv);
+            console.log('Error div found:', errorDiv);
+            
+            // Hide other states
+            successDiv.classList.add('hidden');
+            errorDiv.classList.add('hidden');
+            
+            // Show progress
+            progressDiv.classList.remove('hidden');
+            
+            // Reset progress
+            updateUploadProgress(fieldId, 0, 'Starting upload...');
+        }
+
+        // Update upload progress
+        function updateUploadProgress(fieldId, progress, status) {
+            const progressBar = document.getElementById(`progress-bar-${fieldId}`);
+            const progressText = document.getElementById(`progress-text-${fieldId}`);
+            const progressStatus = document.getElementById(`progress-status-${fieldId}`);
+            
+            progressBar.style.width = `${progress}%`;
+            progressText.textContent = `${progress}%`;
+            progressStatus.textContent = status;
+        }
+
+        // Show upload success
+        function showUploadSuccess(fieldId) {
+            try {
+                console.log(`Showing upload success for field: ${fieldId}`);
+                
+                const progressDiv = document.getElementById(`progress-${fieldId}`);
+                const successDiv = document.getElementById(`success-${fieldId}`);
+                const errorDiv = document.getElementById(`error-${fieldId}`);
+                
+                // Hide other states
+                if (progressDiv) progressDiv.classList.add('hidden');
+                if (errorDiv) errorDiv.classList.add('hidden');
+                
+                // Show success
+                if (successDiv) successDiv.classList.remove('hidden');
+                
+                // Mark the field as completed in the form data using a hidden input
+                const hiddenInput = document.querySelector(`input[name="${fieldId}_status"]`);
+                if (hiddenInput) {
+                    hiddenInput.value = 'completed'; // Mark as completed
+                    console.log(`Marked field ${fieldId} as completed in form data`);
+                } else {
+                    console.warn(`Hidden status input not found for fieldId: ${fieldId}`);
+                }
+                
+                // Update the file input display to show uploaded status with filename
+                const filename = response.data.filename || 'Uploaded file';
+                updateFileInputDisplay(fieldId, 'File uploaded successfully', filename);
+                
+                // Update global upload status
+                updateGlobalUploadStatus();
+            } catch (error) {
+                console.error('Error in showUploadSuccess:', error);
+            }
+        }
+        
+        // Update file input display to show uploaded status
+        function updateFileInputDisplay(fieldId, status, filename = null) {
+            try {
+                // Find the file input container
+                const fieldInput = document.querySelector(`input[name="${fieldId}"]`);
+                if (!fieldInput) {
+                    console.warn(`Field input not found for fieldId: ${fieldId}`);
+                    return;
+                }
+                
+                const fileInputContainer = fieldInput.closest('.file-upload-container');
+                if (!fileInputContainer) {
+                    console.warn(`File upload container not found for fieldId: ${fieldId}`);
+                    return;
+                }
+                
+                // If we have a filename, show the filename display
+                if (filename) {
+                    const filenameDisplay = document.getElementById(`filename-${fieldId}`);
+                    const filenameText = document.getElementById(`filename-text-${fieldId}`);
+                    const filenameHidden = document.querySelector(`input[name="${fieldId}_filename"]`);
+                    
+                    if (filenameDisplay && filenameText) {
+                        filenameText.textContent = filename;
+                        filenameDisplay.classList.remove('hidden');
+                        
+                        // Store filename in hidden input
+                        if (filenameHidden) {
+                            filenameHidden.value = filename;
+                        }
+                    }
+                    
+                    // Hide the file input and show success
+                    fieldInput.style.display = 'none';
+                } else {
+                    // Find the "No file selected" text and update it
+                    const noFileText = fileInputContainer.querySelector('.text-gray-500');
+                    if (noFileText) {
+                        noFileText.textContent = status;
+                        noFileText.classList.remove('text-gray-500');
+                        noFileText.classList.add('text-green-600');
+                    }
+                }
+                
+                // Remove red border and add green border to indicate success
+                const fileInput = fileInputContainer.querySelector('input[type="file"]');
+                if (fileInput) {
+                    fileInput.classList.remove('border-red-300', 'focus:border-red-500', 'focus:ring-red-500');
+                    fileInput.classList.add('border-green-300', 'focus:border-green-500', 'focus:ring-green-500');
+                }
+            } catch (error) {
+                console.error('Error updating file input display:', error);
+            }
+        }
+        
+        // Function to change file (show file input again)
+        function changeFile(fieldId) {
+            try {
+                const fieldInput = document.querySelector(`input[name="${fieldId}"]`);
+                const filenameDisplay = document.getElementById(`filename-${fieldId}`);
+                const filenameHidden = document.querySelector(`input[name="${fieldId}_filename"]`);
+                
+                if (fieldInput && filenameDisplay) {
+                    // Show file input again
+                    fieldInput.style.display = 'block';
+                    fieldInput.value = ''; // Clear the file input
+                    
+                    // Hide filename display
+                    filenameDisplay.classList.add('hidden');
+                    
+                    // Clear filename from hidden input
+                    if (filenameHidden) {
+                        filenameHidden.value = '';
+                    }
+                    
+                    // Reset status
+                    const statusHidden = document.querySelector(`input[name="${fieldId}_status"]`);
+                    if (statusHidden) {
+                        statusHidden.value = '';
+                    }
+                }
+            } catch (error) {
+                console.error('Error changing file:', error);
+            }
+        }
+        
+        // Check for existing uploaded files and update UI accordingly
+        async function checkExistingUploadedFiles() {
+            if (!currentSession || !currentSession.id || !currentNode) {
+                console.log('Missing required data for checkExistingUploadedFiles');
+                return;
+            }
+            
+            try {
+                console.log('Checking existing uploaded files for session:', currentSession.id);
+                
+                // Get uploaded files for this session
+                const response = await axios.get(`${API_BASE}/sessions/${currentSession.id}/uploads`);
+                const uploadedFiles = response.data || [];
+                
+                console.log('Found uploaded files:', uploadedFiles);
+                
+                // Check each file field in the current node
+                if (currentNode.fields) {
+                    currentNode.fields.forEach(field => {
+                        if (field.type === 'file') {
+                            console.log(`Checking field: ${field.id}`);
+                            
+                            // Check if there's an uploaded file for this field
+                            const uploadedFile = uploadedFiles.find(file => file.field_id === field.id);
+                            if (uploadedFile && uploadedFile.status === 'completed') {
+                                console.log(`Found completed upload for field: ${field.id}`);
+                                
+                                // Mark the field as completed using hidden input
+                                const hiddenInput = document.querySelector(`input[name="${field.id}_status"]`);
+                                if (hiddenInput) {
+                                    hiddenInput.value = 'completed';
+                                    console.log(`Marked field ${field.id} as completed`);
+                                } else {
+                                    console.warn(`Hidden input not found for field: ${field.id}`);
+                                }
+                                
+                                // Update the UI to show uploaded status with filename
+                                const filename = uploadedFile.filename || 'Uploaded file';
+                                updateFileInputDisplay(field.id, 'File uploaded successfully', filename);
+                                
+                                // Also show the success indicator
+                                const successDiv = document.getElementById(`success-${field.id}`);
+                                if (successDiv) {
+                                    successDiv.classList.remove('hidden');
+                                }
+                            } else {
+                                console.log(`No completed upload found for field: ${field.id}`);
+                            }
+                        }
+                    });
+                }
+            } catch (error) {
+                console.warn('Could not check existing uploaded files:', error);
+            }
+        }
+
+        // Show upload error
+        function showUploadError(fieldId, errorMessage) {
+            const progressDiv = document.getElementById(`progress-${fieldId}`);
+            const successDiv = document.getElementById(`success-${fieldId}`);
+            const errorDiv = document.getElementById(`error-${fieldId}`);
+            const errorText = document.getElementById(`error-text-${fieldId}`);
+            
+            // Hide other states
+            progressDiv.classList.add('hidden');
+            successDiv.classList.add('hidden');
+            
+            // Show error
+            errorText.textContent = errorMessage;
+            errorDiv.classList.remove('hidden');
+            
+            // Update global upload status
+            updateGlobalUploadStatus();
+        }
+
+        // Update global upload status indicator
+        async function updateGlobalUploadStatus() {
+            if (!currentSession) return;
+            
+            try {
+                const uploadsResponse = await axios.get(`${API_BASE}/sessions/${currentSession.id}/uploads`);
+                const ongoingUploads = uploadsResponse.data.filter(upload => upload.status === 'uploading');
+                
+                // Update the header to show upload status
+                const headerElement = document.getElementById('current-node-header');
+                if (headerElement) {
+                    if (ongoingUploads.length > 0) {
+                        const uploadNames = ongoingUploads.map(upload => upload.file_name).join(', ');
+                        headerElement.innerHTML = `
+                            <div class="flex items-center justify-between">
+                                <h2 class="text-xl font-semibold text-gray-800">${currentNode ? currentNode.name : 'Loading...'}</h2>
+                                <div class="flex items-center text-orange-600 bg-orange-100 px-3 py-1 rounded-full text-sm">
+                                    <svg class="w-4 h-4 mr-2 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                    </svg>
+                                    Uploading: ${uploadNames}
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        // Reset to normal header
+                        headerElement.innerHTML = `
+                            <h2 class="text-xl font-semibold text-gray-800">${currentNode ? currentNode.name : 'Loading...'}</h2>
+                        `;
+                    }
+                }
+            } catch (error) {
+                console.warn('Could not update global upload status:', error);
+            }
+        }
+
+        // Upload file asynchronously
+        async function uploadFileAsync(file, fieldId) {
+            console.log('uploadFileAsync called with fieldId:', fieldId, 'file:', file.name);
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                // Update global status when upload starts
+                updateGlobalUploadStatus();
+
+                console.log('Starting upload to:', `${API_BASE}/sessions/${currentSession.id}/upload/${fieldId}`);
+
+                // Start upload
+                const response = await axios.post(
+                    `${API_BASE}/sessions/${currentSession.id}/upload/${fieldId}`,
+                    formData,
+                    {
+                        headers: {
+                            'Content-Type': 'multipart/form-data',
+                        },
+                        onUploadProgress: (progressEvent) => {
+                            const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+                            console.log('Upload progress:', progress);
+                            updateUploadProgress(fieldId, progress, 'Uploading file...');
+                        }
+                    }
+                );
+
+                console.log('Upload response:', response.data);
+
+                if (response.data.success) {
+                    console.log(`Upload started successfully for field: ${fieldId}`);
+                    
+                    // Upload started successfully, now poll for progress
+                    updateUploadProgress(fieldId, 100, 'File uploaded, processing...');
+                    pollUploadProgress(fieldId);
+                    
+                    // Mark the field as filled in the form data using a hidden input
+                    const hiddenInput = document.querySelector(`input[name="${fieldId}_status"]`);
+                    if (hiddenInput) {
+                        hiddenInput.value = 'uploaded'; // Mark as uploaded
+                        console.log(`Marked field ${fieldId} as uploaded in form data`);
+                    } else {
+                        console.warn(`Hidden status input not found for fieldId: ${fieldId}`);
+                    }
+                    
+                    // Update the file input display to show uploading status
+                    const filename = file.name || 'Uploading file...';
+                    updateFileInputDisplay(fieldId, 'File uploaded, processing...', filename);
+                } else {
+                    showUploadError(fieldId, 'Upload failed: ' + (response.data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Upload error:', error);
+                const errorMessage = error.response?.data?.error || error.message || 'Upload failed';
+                showUploadError(fieldId, errorMessage);
+            }
+        }
+
+        // Poll upload progress
+        async function pollUploadProgress(fieldId) {
+            let pollCount = 0;
+            const pollInterval = setInterval(async () => {
+                pollCount++;
+                try {
+                    const response = await axios.get(`${API_BASE}/sessions/${currentSession.id}/upload/${fieldId}/progress`);
+                    const progress = response.data;
+                    
+                    console.log('Polling progress:', progress); // Debug log
+                    
+                    if (progress.status === 'uploading') {
+                        // Show processing progress with timer
+                        updateUploadProgress(fieldId, progress.progress, `Processing file... (${pollCount}s)`);
+                        updateGlobalUploadStatus();
+                    } else if (progress.status === 'completed') {
+                        clearInterval(pollInterval);
+                        updateUploadProgress(fieldId, 100, 'Upload completed');
+                        setTimeout(() => showUploadSuccess(fieldId), 500);
+                        updateGlobalUploadStatus();
+                    } else if (progress.status === 'failed') {
+                        clearInterval(pollInterval);
+                        showUploadError(fieldId, progress.error || 'Upload failed');
+                        updateGlobalUploadStatus();
+                    }
+                } catch (error) {
+                    console.warn('Failed to poll upload progress:', error);
+                    // If we can't get progress, assume it's still processing
+                    updateUploadProgress(fieldId, 100, `Processing file... (${pollCount}s)`);
+                }
+            }, 1000); // Poll every second
+
+            // Clear interval after 35 seconds to prevent infinite polling
+            setTimeout(() => {
+                clearInterval(pollInterval);
+            }, 35000);
+        }
+
+        // Check upload progress for a field
+        async function checkUploadProgress(fieldId) {
+            try {
+                const response = await axios.get(`${API_BASE}/sessions/${currentSession.id}/upload/${fieldId}/progress`);
+                const progress = response.data;
+                
+                if (progress.status === 'uploading') {
+                    updateUploadProgress(fieldId, progress.progress, 'Uploading...');
+                } else if (progress.status === 'completed') {
+                    showUploadSuccess(fieldId);
+                } else if (progress.status === 'failed') {
+                    showUploadError(fieldId, progress.error || 'Upload failed');
+                }
+            } catch (error) {
+                console.error('Failed to check upload progress:', error);
             }
         }
 
@@ -915,48 +1425,28 @@
                     const newValue = data[currentNode.fields[0]?.id];
                     
                     if (oldValue && oldValue !== newValue) {
-                        console.log(`Path-changing node data changed from ${oldValue} to ${newValue}, clearing subsequent path`);
-                        // Clear all subsequent nodes and restart the path
-                        await clearSubsequentPath();
+                        console.log(`Path-changing node data changed from ${oldValue} to ${newValue}, backend will handle path logic`);
+                        // Backend handles all path logic - no need for complex path clearing
                     }
                 }
                 
-                // Check if we're trying to save data for a node that's not the current backend node
-                if (currentNode && currentNode.id !== backendCurrentNode.id) {
-                    // We're on a different node in the UI than the backend expects
-                    // Just save the data locally and mark as completed
-                    completedNodes.add(currentNode.id);
-                    
-                    // Update our session data with the submitted data
-                    if (!currentSession.data) {
-                        currentSession.data = {};
-                    }
-                    Object.assign(currentSession.data, data);
-                    
-                    // Update UI
-                    buildNavigationMap();
-                    updateProgress();
-                    updateDataSummary();
-                    
-                    if (continueToNext) {
-                        // Find next incomplete node that is also available
-                        const nextNode = allNodes.find(node => 
-                            !completedNodes.has(node.id) && 
-                            isNodeAvailable(node) &&
-                            node.id !== currentNode.id
-                        );
-                        if (nextNode) {
-                            console.log(`Navigating to next unvisited node: ${nextNode.name}`);
-                            await navigateToNode(nextNode.id);
-                        } else {
-                            // Backend will handle completion detection - if no next node, we're done
-                            console.log('No next node found, showing completion screen');
-                            showCompletion();
-                        }
-                    }
-                    return;
-                }
+                // Backend handles all navigation logic - no need for complex sync
                 
+                // Check for ongoing uploads before saving to backend
+                try {
+                    const uploadsResponse = await axios.get(`${API_BASE}/sessions/${currentSession.id}/uploads`);
+                    const ongoingUploads = uploadsResponse.data.filter(upload => upload.status === 'uploading');
+                    
+                    if (ongoingUploads.length > 0) {
+                        const uploadNames = ongoingUploads.map(upload => upload.file_name).join(', ');
+                        showError(`⚠️ Cannot save while uploads are in progress: ${uploadNames}. Please wait for uploads to complete.`);
+                        return;
+                    }
+                } catch (error) {
+                    console.warn('Could not check upload status:', error);
+                    // Continue with save attempt - backend will handle the validation
+                }
+
                 // Normal flow: save to backend
                 const response = await axios.post(`${API_BASE}/sessions/${currentSession.id}/submit`, data);
                 
@@ -972,6 +1462,12 @@
                 // Recalculate available paths after data update
                 buildNavigationMap();
                 
+                // If this was User Type Selection, fetch eligible nodes from backend
+                if (backendCurrentNode.name === 'User Type Selection') {
+                    console.log('User type selection completed, fetching eligible nodes...');
+                    await fetchEligibleNodes();
+                }
+                
                 // Let backend handle completion detection - check if current node is completion node
                 const currentSaveNode = allNodes.find(node => node.id === currentSession.current_node_id);
                 if (currentSaveNode && (currentSaveNode.type === 'end' || currentSaveNode.name === 'Onboarding Complete')) {
@@ -980,34 +1476,32 @@
                 }
                 
                 if (continueToNext) {
-                    // Let the backend determine the next node instead of our local logic
-                    if (response.data.next_node_id) {
-                        // Check if the next node has already been visited
-                        if (completedNodes.has(response.data.next_node_id)) {
-                            // Find the next unvisited node
-                            const nextUnvisitedNode = allNodes.find(node => 
-                                !completedNodes.has(node.id) && 
-                                isNodeAvailable(node) &&
-                                node.id !== backendCurrentNode.id
-                            );
-                            
-                            if (nextUnvisitedNode) {
-                                console.log(`Next node ${response.data.next_node_id} already visited, navigating to unvisited node: ${nextUnvisitedNode.name}`);
-                                await navigateToNode(nextUnvisitedNode.id);
-                            } else {
-                                // No unvisited nodes available, backend will handle completion
-                                console.log('No unvisited nodes available, showing completion screen');
+                    // Check if the session is completed first
+                    if (response.data.metadata && response.data.metadata.session_status === 'completed') {
+                        console.log('Session completed, showing completion screen');
+                        showCompletion();
+                    } else if (response.data.next_node_id) {
+                        // Navigate to the specific next node determined by the backend
+                        const nextNode = allNodes.find(n => n.id === response.data.next_node_id);
+                        if (nextNode) {
+                            // Check if this is the completion node
+                            if (nextNode.name === 'Onboarding Complete' || nextNode.type === 'end') {
+                                console.log('Navigating to completion node, showing completion screen');
                                 showCompletion();
+                            } else {
+                                // Directly navigate to the backend's determined next node
+                                console.log(`Backend determined next node: ${nextNode.name}, navigating directly`);
+                                currentNode = nextNode;
+                                visitedNodes.add(nextNode.id);
+                                updateCurrentNodeHeader();
+                                generateFormFields();
+                                buildNavigationMap();
+                                updateProgress();
+                                updateDataSummary();
                             }
                         } else {
-                            // Navigate to the specific next node determined by the backend
-                            const nextNode = allNodes.find(n => n.id === response.data.next_node_id);
-                            if (nextNode) {
-                                await navigateToNode(nextNode.id);
-                            } else {
-                                // Fallback: reload current node from backend
-                                await loadCurrentNode();
-                            }
+                            // Fallback: reload current node from backend
+                            await loadCurrentNode();
                         }
                     } else {
                         // No next node, check if we're complete
@@ -1024,8 +1518,89 @@
                 
             } catch (error) {
                 console.error('Error saving data:', error);
+                console.log('Error response:', error.response?.data);
+                console.log('Error status:', error.response?.status);
                 
-                // Show detailed validation errors
+                // Handle specific upload conflict error
+                if (error.response?.status === 409) {
+                    showError('⚠️ ' + (error.response.data || 'Cannot save while uploads are in progress. Please wait for uploads to complete.'));
+                    return;
+                }
+                
+                // Handle completion blocking - check if this is a "missing required nodes" error
+                if (error.response?.data?.error && error.response.data.error.includes('cannot complete onboarding yet')) {
+                    // This means the backend is trying to complete but missing required nodes
+                    // The backend should have automatically navigated to the missing node
+                    // Let's reload the current node to see where we are now
+                    console.log('Completion blocked due to missing required nodes, reloading current node...');
+                    
+                    // Force a complete reload of the current node and UI state
+                    await loadCurrentNode();
+                    await loadGraph();
+                    buildNavigationMap();
+                    updateProgress();
+                    updateDataSummary();
+                    
+                    // Show a helpful message about what's happening
+                    const missingNodes = error.response.data.error.match(/\[(.*?)\]/);
+                    if (missingNodes) {
+                        showInfo(`📋 Please complete the following steps: ${missingNodes[1]}. You've been automatically taken to the next required step.`);
+                    } else {
+                        showInfo('📋 Please complete the required steps. You\'ve been automatically taken to the next required step.');
+                    }
+                    return;
+                }
+                
+                // Handle validation errors that might indicate UI-backend sync issues
+                if (error.response?.data?.error && error.response.data.error.includes('validation failed')) {
+                    // Check if this might be a UI-backend sync issue
+                    // The backend might have navigated to a different node than what the UI thinks
+                    console.log('Validation failed, checking if UI is out of sync with backend...');
+                    
+                    // Preserve current form data before reloading
+                    const currentFormData = {};
+                    const allInputs = document.querySelectorAll('#form-fields input, #form-fields select, #form-fields textarea');
+                    allInputs.forEach(input => {
+                        if (input.name) {
+                            if (input.type === 'checkbox' || input.type === 'radio') {
+                                currentFormData[input.name] = input.checked;
+                            } else {
+                                currentFormData[input.name] = input.value;
+                            }
+                        }
+                    });
+                    
+                    console.log('Preserved form data before reload:', currentFormData);
+                    
+                    // Force a complete reload of the current node and UI state
+                    await loadCurrentNode();
+                    await loadGraph();
+                    buildNavigationMap();
+                    updateProgress();
+                    updateDataSummary();
+                    
+                    // Restore the preserved form data after a short delay
+                    setTimeout(() => {
+                        console.log('Restoring preserved form data:', currentFormData);
+                        Object.keys(currentFormData).forEach(fieldId => {
+                            const fieldElement = document.querySelector(`[name="${fieldId}"]`);
+                            if (fieldElement) {
+                                if (fieldElement.type === 'checkbox' || fieldElement.type === 'radio') {
+                                    fieldElement.checked = currentFormData[fieldId];
+                                } else {
+                                    fieldElement.value = currentFormData[fieldId];
+                                }
+                                console.log(`✅ Restored field ${fieldId} with value:`, currentFormData[fieldId]);
+                            }
+                        });
+                    }, 150); // Slightly longer delay to ensure form is fully generated
+                    
+                    // Show a helpful message
+                    showInfo('🔄 The system has automatically taken you to the next required step. Please fill in the required information.');
+                    return;
+                }
+                
+                // Show detailed validation errors for other cases
                 let errorMessage = 'Error saving data: ';
                 if (error.response?.data?.message) {
                     errorMessage += error.response.data.message;
@@ -1101,11 +1676,35 @@
             }
         }
 
+        // Show info message (for completion guidance)
+        function showInfo(message) {
+            const errorDiv = document.getElementById('error-message');
+            if (errorDiv) {
+                errorDiv.textContent = message;
+                errorDiv.style.display = 'block';
+                errorDiv.style.backgroundColor = '#e3f2fd'; // Light blue background
+                errorDiv.style.color = '#1976d2'; // Blue text
+                errorDiv.style.border = '1px solid #bbdefb';
+                errorDiv.scrollIntoView({ behavior: 'smooth' });
+                
+                // Auto-hide after 5 seconds
+                setTimeout(() => {
+                    clearError();
+                }, 5000);
+            } else {
+                alert(message); // Fallback to alert if error div doesn't exist
+            }
+        }
+
         // Clear error message
         function clearError() {
             const errorDiv = document.getElementById('error-message');
             if (errorDiv) {
                 errorDiv.style.display = 'none';
+                // Reset styling
+                errorDiv.style.backgroundColor = '';
+                errorDiv.style.color = '';
+                errorDiv.style.border = '';
             }
         }
 
