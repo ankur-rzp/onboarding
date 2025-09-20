@@ -429,10 +429,8 @@ func (s *Service) GetEligibleNodes(ctx context.Context, sessionID string) ([]str
 			continue
 		}
 
-		// Skip start node (User Type Selection) as it's already completed
-		if node.Name == "User Type Selection" {
-			continue
-		}
+		// User Type Selection should remain available even after completion
+		// so users can go back and change their selection
 
 		// For individual users, exclude company-specific nodes
 		if userType == "individual" {

@@ -366,9 +366,14 @@
                 return false;
             }
             
+            // User Type Selection (start node) is always available - users can go back and change their selection
+            if (node.name === 'User Type Selection') {
+                return true;
+            }
+            
             // If no user type selected, only show User Type Selection
             if (!currentSession || !currentSession.data || !currentSession.data.user_type) {
-                return node.name === 'User Type Selection';
+                return false;
             }
             
             // Check if this node is in the eligible nodes list
@@ -383,87 +388,6 @@
             
             // Fallback: let backend handle all other navigation logic
             return true;
-            
-            // If it's completed, it's available for review
-            if (completedNodes.has(node.id)) {
-                return true;
-            }
-            
-            // Start node is always available
-            if (node.name === 'User Type Selection') {
-                return true;
-            }
-            
-            // If we haven't completed the user type selection, only show the start node
-            const userTypeSelectionNode = allNodes.find(n => n.name === 'User Type Selection');
-            if (userTypeSelectionNode && !completedNodes.has(userTypeSelectionNode.id)) {
-                return false; // Only start node should be available
-            }
-            
-            // If we have user type data, show nodes based on the selected path
-            if (currentSession && currentSession.data && currentSession.data.user_type) {
-                const userType = currentSession.data.user_type;
-                
-                if (userType === 'individual') {
-                    // For individual users, hide company-specific nodes
-                    if (node.name === 'Business Type' || node.name === 'Company Information') {
-                        return false;
-                    }
-                } else if (userType === 'company') {
-                    // For company users, hide individual-specific nodes
-                    if (node.name === 'Personal Information') {
-                        return false;
-                    }
-                }
-            }
-            
-            // NEW LOGIC: Enable all possible paths based on current session state
-            // Once user type is selected, enable most nodes for free navigation
-            
-            // If we have user type selected, enable most nodes
-            if (currentSession && currentSession.data && currentSession.data.user_type) {
-                // Enable all nodes except the ones explicitly blocked by user type
-                const blockedNodes = [];
-                
-                if (currentSession.data.user_type === 'individual') {
-                    blockedNodes.push('Business Type', 'Company Information');
-                } else if (currentSession.data.user_type === 'company') {
-                    blockedNodes.push('Personal Information');
-                }
-                
-                // If this node is not blocked, it's available
-                if (!blockedNodes.includes(node.name)) {
-                    console.log(`✅ Node ${node.name} is available (not blocked by user type)`);
-                    return true;
-                } else {
-                    console.log(`❌ Node ${node.name} is blocked by user type: ${currentSession.data.user_type}`);
-                }
-            }
-            
-            // Fallback: if we don't have user type, use the old restrictive logic
-            const nodeOrder = [
-                'User Type Selection',
-                'Personal Information', 'Business Type',
-                'Company Information',
-                'Contact Information',
-                'Identity Documents',
-                'Tax Information',
-                'Bank Details',
-                'Document Upload',
-                'Onboarding Complete'
-            ];
-            
-            const currentIndex = nodeOrder.indexOf(currentNode ? currentNode.name : 'User Type Selection');
-            const nodeIndex = nodeOrder.indexOf(node.name);
-            
-            // Allow access to current node and next few nodes
-            if (nodeIndex <= currentIndex + 2) {
-                console.log(`✅ Node ${node.name} is available (fallback logic: index ${nodeIndex} <= ${currentIndex + 2})`);
-                return true;
-            }
-            
-            console.log(`❌ Node ${node.name} is not available (fallback logic: index ${nodeIndex} > ${currentIndex + 2})`);
-            return false;
         }
 
         // Navigate to a specific node
