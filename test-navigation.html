@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Navigation</title>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold mb-8">Test Navigation</h1>
+        
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <h2 class="text-xl font-bold mb-4">Session Info</h2>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Session ID</label>
+                    <div class="text-sm text-gray-600 font-mono" id="sessionId">Not started</div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Current Node</label>
+                    <div class="text-sm text-gray-600" id="currentNode">Not loaded</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <h2 class="text-xl font-bold mb-4">Actions</h2>
+            <div class="space-x-4">
+                <button onclick="startSession()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                    Start Session
+                </button>
+                <button onclick="loadCurrentNode()" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
+                    Load Current Node
+                </button>
+                <button onclick="submitCurrentNode()" class="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700">
+                    Submit Current Node
+                </button>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <h2 class="text-xl font-bold mb-4">Current Form</h2>
+            <div id="currentForm">
+                <div class="text-gray-500">No form loaded</div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-lg p-6">
+            <h2 class="text-xl font-bold mb-4">Debug Log</h2>
+            <div id="debugLog" class="bg-gray-50 p-4 rounded h-64 overflow-y-auto text-sm font-mono">
+                <div class="text-gray-500">No logs yet</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080/api/v1';
+        let currentSession = null;
+        let currentGraph = null;
+        let currentNode = null;
+
+        function log(message) {
+            const logContainer = document.getElementById('debugLog');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `<span class="text-gray-500">[${timestamp}]</span> ${message}`;
+            
+            // Remove "No logs yet" message if it exists
+            const noLogs = logContainer.querySelector('.text-gray-500');
+            if (noLogs && noLogs.textContent === 'No logs yet') {
+                noLogs.remove();
+            }
+            
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        async function startSession() {
+            try {
+                log('🆕 Starting session...');
+                
+                // Get the production graph
+                const graphsResponse = await axios.get(`${API_BASE}/graphs`);
+                const graphs = graphsResponse.data || [];
+                currentGraph = graphs.find(g => g.name === 'Production Onboarding');
+                
+                if (!currentGraph) {
+                    log('❌ Production Onboarding graph not found');
+                    return;
+                }
+                
+                log(`📊 Found graph: ${currentGraph.name} (${currentGraph.id.substring(0, 8)}...)`);
+                
+                // Start session
+                const sessionResponse = await axios.post(`${API_BASE}/sessions`, {
+                    graph_id: currentGraph.id,
+                    user_id: 'test-user-' + Date.now()
+                });
+                
+                currentSession = sessionResponse.data;
+                document.getElementById('sessionId').textContent = currentSession.id.substring(0, 8) + '...';
+                log(`✅ Session started: ${currentSession.id.substring(0, 8)}...`);
+                
+                // Load current node
+                await loadCurrentNode();
+                
+            } catch (error) {
+                log(`❌ Error starting session: ${error.message}`);
+            }
+        }
+
+        async function loadCurrentNode() {
+            if (!currentSession) {
+                log('❌ No session available');
+                return;
+            }
+
+            try {
+                log('📍 Loading current node...');
+                const response = await axios.get(`${API_BASE}/sessions/${currentSession.id}/current`);
+                currentNode = response.data;
+                
+                document.getElementById('currentNode').textContent = currentNode.name;
+                log(`✅ Current node: ${currentNode.name}`);
+                
+                // Generate form
+                generateForm();
+                
+            } catch (error) {
+                log(`❌ Error loading current node: ${error.message}`);
+            }
+        }
+
+        function generateForm() {
+            if (!currentNode) return;
+            
+            const formContainer = document.getElementById('currentForm');
+            
+            if (currentNode.name === 'Business Type Selection') {
+                formContainer.innerHTML = `
+                    <div class="space-y-4">
+                        <h3 class="font-medium text-gray-800">${currentNode.name}</h3>
+                        <p class="text-sm text-gray-600">${currentNode.description}</p>
+                        
+                        <div class="space-y-3">
+                            <label class="block text-sm font-medium text-gray-700">Business Type</label>
+                            <select id="businessTypeSelect" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                <option value="">Select business type</option>
+                                <option value="individual">Individual</option>
+                                <option value="proprietorship">Proprietorship</option>
+                                <option value="private_limited">Private Limited</option>
+                                <option value="public_limited">Public Limited</option>
+                                <option value="partnership">Partnership</option>
+                                <option value="llp">LLP</option>
+                                <option value="trust">Trust</option>
+                                <option value="society">Society</option>
+                                <option value="huf">HUF</option>
+                            </select>
+                        </div>
+                        
+                        <button onclick="submitCurrentNode()" class="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors">
+                            Submit Business Type
+                        </button>
+                    </div>
+                `;
+            } else if (currentNode.name === 'PAN Number') {
+                formContainer.innerHTML = `
+                    <div class="space-y-4">
+                        <h3 class="font-medium text-gray-800">${currentNode.name}</h3>
+                        <p class="text-sm text-gray-600">${currentNode.description}</p>
+                        
+                        <div class="space-y-3">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">PAN Number</label>
+                                <input type="text" id="panNumber" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="ABCDE1234F">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">PAN Document</label>
+                                <input type="file" id="panDocument" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            </div>
+                        </div>
+                        
+                        <button onclick="submitCurrentNode()" class="w-full bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 transition-colors">
+                            Submit PAN Details
+                        </button>
+                    </div>
+                `;
+            } else if (currentNode.name === 'Payment Channel') {
+                formContainer.innerHTML = `
+                    <div class="space-y-4">
+                        <h3 class="font-medium text-gray-800">${currentNode.name}</h3>
+                        <p class="text-sm text-gray-600">${currentNode.description}</p>
+                        
+                        <div class="space-y-3">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Payment Channel</label>
+                                <select id="paymentChannel" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="">Select payment channel</option>
+                                    <option value="website">Website</option>
+                                    <option value="app">App</option>
+                                    <option value="no_code">No Code</option>
+                                </select>
+                            </div>
+                            <div id="websiteUrlField" class="hidden">
+                                <label class="block text-sm font-medium text-gray-700">Website URL</label>
+                                <input type="text" id="websiteUrl" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="https://example.com">
+                            </div>
+                            <div id="appUrlFields" class="hidden space-y-3">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">Android URL</label>
+                                    <input type="text" id="androidUrl" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="https://play.google.com/store">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">iOS URL</label>
+                                    <input type="text" id="iosUrl" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="https://apps.apple.com/app">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <button onclick="submitCurrentNode()" class="w-full bg-purple-600 text-white py-2 px-4 rounded-lg hover:bg-purple-700 transition-colors">
+                            Submit Payment Channel
+                        </button>
+                    </div>
+                `;
+                
+                // Add event listener for payment channel change
+                setTimeout(() => {
+                    const paymentChannelSelect = document.getElementById('paymentChannel');
+                    if (paymentChannelSelect) {
+                        paymentChannelSelect.addEventListener('change', function() {
+                            const websiteField = document.getElementById('websiteUrlField');
+                            const appFields = document.getElementById('appUrlFields');
+                            
+                            if (this.value === 'website') {
+                                websiteField.classList.remove('hidden');
+                                appFields.classList.add('hidden');
+                            } else if (this.value === 'app') {
+                                websiteField.classList.add('hidden');
+                                appFields.classList.remove('hidden');
+                            } else {
+                                websiteField.classList.add('hidden');
+                                appFields.classList.add('hidden');
+                            }
+                        });
+                    }
+                }, 100);
+            } else {
+                formContainer.innerHTML = `
+                    <div class="space-y-4">
+                        <h3 class="font-medium text-gray-800">${currentNode.name}</h3>
+                        <p class="text-sm text-gray-600">${currentNode.description}</p>
+                        <div class="text-center py-8 text-gray-500">
+                            Form for ${currentNode.name} would be rendered here
+                        </div>
+                        <button onclick="submitCurrentNode()" class="w-full bg-gray-600 text-white py-2 px-4 rounded-lg hover:bg-gray-700 transition-colors">
+                            Submit ${currentNode.name}
+                        </button>
+                    </div>
+                `;
+            }
+        }
+
+        async function submitCurrentNode() {
+            if (!currentSession || !currentNode) {
+                log('❌ No session or current node available');
+                return;
+            }
+
+            try {
+                // Collect form data based on current node
+                const data = {};
+                
+                if (currentNode.name === 'Business Type Selection') {
+                    const businessType = document.getElementById('businessTypeSelect')?.value;
+                    if (!businessType) {
+                        log('❌ Please select a business type');
+                        return;
+                    }
+                    data.business_type = businessType;
+                } else if (currentNode.name === 'PAN Number') {
+                    const panNumber = document.getElementById('panNumber')?.value;
+                    const panDocument = document.getElementById('panDocument')?.files[0];
+                    
+                    if (!panNumber) {
+                        log('❌ Please enter PAN number');
+                        return;
+                    }
+                    if (!panDocument) {
+                        log('❌ Please upload PAN document');
+                        return;
+                    }
+                    
+                    data.pan_number = panNumber;
+                    data.pan_document = panDocument.name; // For now, just store filename
+                } else if (currentNode.name === 'Payment Channel') {
+                    const paymentChannel = document.getElementById('paymentChannel')?.value;
+                    if (!paymentChannel) {
+                        log('❌ Please select payment channel');
+                        return;
+                    }
+                    
+                    data.payment_channel = paymentChannel;
+                    
+                    if (paymentChannel === 'website') {
+                        const websiteUrl = document.getElementById('websiteUrl')?.value;
+                        if (!websiteUrl) {
+                            log('❌ Please enter website URL');
+                            return;
+                        }
+                        data.website_url = websiteUrl;
+                    } else if (paymentChannel === 'app') {
+                        const androidUrl = document.getElementById('androidUrl')?.value;
+                        const iosUrl = document.getElementById('iosUrl')?.value;
+                        
+                        if (!androidUrl || !iosUrl) {
+                            log('❌ Please enter both Android and iOS URLs');
+                            return;
+                        }
+                        data.android_url = androidUrl;
+                        data.ios_url = iosUrl;
+                    }
+                } else {
+                    log(`❌ No form handler for node: ${currentNode.name}`);
+                    return;
+                }
+                
+                log(`📤 Submitting data for ${currentNode.name}:`, data);
+                const response = await axios.post(`${API_BASE}/sessions/${currentSession.id}/submit`, data);
+                
+                log(`✅ ${currentNode.name} submitted successfully`);
+                log(`📍 Next node ID: ${response.data.next_node_id}`);
+                
+                // Update session data
+                if (!currentSession.data) {
+                    currentSession.data = {};
+                }
+                Object.assign(currentSession.data, data);
+                
+                // Load the next node
+                await loadCurrentNode();
+                
+            } catch (error) {
+                log(`❌ Error submitting ${currentNode.name}: ${error.message}`);
+                if (error.response && error.response.data) {
+                    log(`📝 Error details: ${JSON.stringify(error.response.data)}`);
+                }
+            }
+        }
+
+        // Initialize
+        log('🚀 Test page loaded');
+    </script>
+</body>
+</html>

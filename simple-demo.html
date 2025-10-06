@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Onboarding System - Simple Demo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <style>
+        .business-type-card { @apply p-4 border-2 rounded-lg cursor-pointer transition-all duration-200 hover:shadow-lg; }
+        .business-type-card.selected { @apply border-blue-500 bg-blue-50; }
+        .business-type-card:hover { @apply border-blue-300; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">🚀 Onboarding System Demo</h1>
+            <p class="text-gray-600 mb-4">Demonstrating CSV-based business type requirements</p>
+            
+            <!-- Session Info -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div class="bg-blue-50 p-3 rounded-lg">
+                    <div class="text-sm text-blue-600 font-medium">Session ID</div>
+                    <div class="text-sm text-blue-800 font-mono" id="sessionId">Not started</div>
+                </div>
+                <div class="bg-green-50 p-3 rounded-lg">
+                    <div class="text-sm text-green-600 font-medium">Current Node</div>
+                    <div class="text-sm text-green-800" id="currentNode">Not available</div>
+                </div>
+                <div class="bg-purple-50 p-3 rounded-lg">
+                    <div class="text-sm text-purple-600 font-medium">Graph</div>
+                    <div class="text-sm text-purple-800" id="graphInfo">Production Onboarding</div>
+                </div>
+            </div>
+            
+            <!-- Action Buttons -->
+            <div class="flex flex-wrap gap-2">
+                <button onclick="startSession()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                    🆕 Start Session
+                </button>
+                <button onclick="loadCurrentNode()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors">
+                    📍 Load Current Node
+                </button>
+                <button onclick="submitBusinessType()" class="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors">
+                    ✅ Submit Business Type
+                </button>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Left Panel: Business Type Selection -->
+            <div>
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <h2 class="text-xl font-bold text-gray-800 mb-4">🏢 Business Type Selection</h2>
+                    <p class="text-gray-600 text-sm mb-4">Select a business type to see requirements</p>
+                    
+                    <div class="space-y-3" id="businessTypeSelection">
+                        <div class="business-type-card" onclick="selectBusinessType('individual')">
+                            <div class="font-medium text-gray-800">Individual</div>
+                            <div class="text-sm text-gray-600">Individual business owner</div>
+                        </div>
+                        <div class="business-type-card" onclick="selectBusinessType('proprietorship')">
+                            <div class="font-medium text-gray-800">Proprietorship</div>
+                            <div class="text-sm text-gray-600">Sole proprietorship business</div>
+                        </div>
+                        <div class="business-type-card" onclick="selectBusinessType('private_limited')">
+                            <div class="font-medium text-gray-800">Private Limited</div>
+                            <div class="text-sm text-gray-600">Private limited company</div>
+                        </div>
+                        <div class="business-type-card" onclick="selectBusinessType('public_limited')">
+                            <div class="font-medium text-gray-800">Public Limited</div>
+                            <div class="text-sm text-gray-600">Public limited company</div>
+                        </div>
+                        <div class="business-type-card" onclick="selectBusinessType('partnership')">
+                            <div class="font-medium text-gray-800">Partnership</div>
+                            <div class="text-sm text-gray-600">Partnership firm</div>
+                        </div>
+                        <div class="business-type-card" onclick="selectBusinessType('llp')">
+                            <div class="font-medium text-gray-800">LLP</div>
+                            <div class="text-sm text-gray-600">Limited Liability Partnership</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel: Current Form -->
+            <div>
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <h2 class="text-xl font-bold text-gray-800 mb-4">📝 Current Form</h2>
+                    <p class="text-gray-600 text-sm mb-4">Fill out the current node's fields</p>
+                    
+                    <div id="currentForm">
+                        <div class="text-gray-500 text-center py-8">
+                            Start a session to begin
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Panel: Activity Log -->
+        <div class="mt-8">
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">📝 Activity Log</h2>
+                <div class="bg-gray-50 p-4 rounded-lg h-64 overflow-y-auto">
+                    <div id="activityLog" class="text-sm text-gray-700 space-y-1">
+                        <div class="text-gray-500">No activity yet</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080/api/v1';
+        let currentSession = null;
+        let currentGraph = null;
+        let selectedBusinessType = null;
+
+        // Initialize the demo
+        async function init() {
+            logActivity('🚀 Initializing Onboarding Demo');
+            await loadGraphs();
+            logActivity('✅ Demo initialized successfully');
+        }
+
+        // Load available graphs
+        async function loadGraphs() {
+            try {
+                const response = await axios.get(`${API_BASE}/graphs`);
+                const graphs = response.data || [];
+                currentGraph = graphs.find(g => g.name === 'Production Onboarding');
+                if (currentGraph) {
+                    logActivity(`📊 Loaded graph: ${currentGraph.name} (${currentGraph.id.substring(0, 8)}...)`);
+                    document.getElementById('graphInfo').textContent = `${currentGraph.name} (${currentGraph.id.substring(0, 8)}...)`;
+                } else {
+                    logActivity('⚠️ Production Onboarding graph not found');
+                }
+            } catch (error) {
+                logActivity(`❌ Failed to load graphs: ${error.message}`);
+            }
+        }
+
+        // Start a session
+        async function startSession() {
+            if (!currentGraph) {
+                logActivity('❌ No graph available');
+                return;
+            }
+
+            try {
+                logActivity('🆕 Starting new session...');
+                const response = await axios.post(`${API_BASE}/sessions`, {
+                    graph_id: currentGraph.id,
+                    user_id: 'demo-user-' + Date.now()
+                });
+                
+                currentSession = response.data;
+                updateSessionInfo();
+                logActivity(`✅ Session started: ${currentSession.id.substring(0, 8)}...`);
+                
+                // Load current node
+                await loadCurrentNode();
+                
+            } catch (error) {
+                logActivity(`❌ Failed to start session: ${error.message}`);
+            }
+        }
+
+        // Load current node
+        async function loadCurrentNode() {
+            if (!currentSession) {
+                logActivity('❌ No active session');
+                return;
+            }
+
+            try {
+                logActivity('📍 Loading current node...');
+                const response = await axios.get(`${API_BASE}/sessions/${currentSession.id}/current`);
+                const node = response.data;
+                
+                document.getElementById('currentNode').textContent = node.name;
+                renderCurrentForm(node);
+                logActivity(`✅ Current node loaded: ${node.name}`);
+                
+            } catch (error) {
+                logActivity(`❌ Failed to load current node: ${error.message}`);
+            }
+        }
+
+        // Render current form
+        function renderCurrentForm(node) {
+            const container = document.getElementById('currentForm');
+            
+            if (node.name === 'Business Type Selection') {
+                container.innerHTML = `
+                    <div class="space-y-4">
+                        <h3 class="font-medium text-gray-800">${node.name}</h3>
+                        <p class="text-sm text-gray-600">${node.description}</p>
+                        
+                        <div class="space-y-3">
+                            <label class="block text-sm font-medium text-gray-700">Business Type</label>
+                            <select id="businessTypeSelect" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                <option value="">Select business type</option>
+                                <option value="individual">Individual</option>
+                                <option value="proprietorship">Proprietorship</option>
+                                <option value="private_limited">Private Limited</option>
+                                <option value="public_limited">Public Limited</option>
+                                <option value="partnership">Partnership</option>
+                                <option value="llp">LLP</option>
+                                <option value="trust">Trust</option>
+                                <option value="society">Society</option>
+                                <option value="huf">HUF</option>
+                            </select>
+                        </div>
+                        
+                        <button onclick="submitBusinessType()" class="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors">
+                            Submit Business Type
+                        </button>
+                    </div>
+                `;
+            } else {
+                container.innerHTML = `
+                    <div class="space-y-4">
+                        <h3 class="font-medium text-gray-800">${node.name}</h3>
+                        <p class="text-sm text-gray-600">${node.description}</p>
+                        
+                        <div class="text-center py-8 text-gray-500">
+                            Form fields for ${node.name} would be rendered here
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        // Select business type
+        function selectBusinessType(businessType) {
+            selectedBusinessType = businessType;
+            
+            // Update UI
+            document.querySelectorAll('.business-type-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+            
+            const selectedCard = document.querySelector(`[onclick="selectBusinessType('${businessType}')"]`);
+            if (selectedCard) {
+                selectedCard.classList.add('selected');
+            }
+            
+            // Update form if it's loaded
+            const select = document.getElementById('businessTypeSelect');
+            if (select) {
+                select.value = businessType;
+            }
+            
+            logActivity(`🏢 Selected business type: ${businessType}`);
+        }
+
+        // Submit business type
+        async function submitBusinessType() {
+            if (!currentSession) {
+                logActivity('❌ No active session');
+                return;
+            }
+
+            const businessType = selectedBusinessType || document.getElementById('businessTypeSelect')?.value;
+            if (!businessType) {
+                logActivity('❌ Please select a business type');
+                return;
+            }
+
+            try {
+                logActivity(`📤 Submitting business type: ${businessType}`);
+                const response = await axios.post(`${API_BASE}/sessions/${currentSession.id}/submit`, {
+                    business_type: businessType
+                });
+                
+                logActivity(`✅ Business type submitted successfully`);
+                logActivity(`📍 Next node: ${response.data.next_node_id}`);
+                
+                // Reload current node
+                await loadCurrentNode();
+                
+            } catch (error) {
+                logActivity(`❌ Failed to submit business type: ${error.message}`);
+                if (error.response && error.response.data) {
+                    logActivity(`📝 Error details: ${JSON.stringify(error.response.data)}`);
+                }
+            }
+        }
+
+        // Update session info
+        function updateSessionInfo() {
+            if (currentSession) {
+                document.getElementById('sessionId').textContent = currentSession.id.substring(0, 8) + '...';
+            }
+        }
+
+        // Log activity
+        function logActivity(message) {
+            const logContainer = document.getElementById('activityLog');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `<span class="text-gray-500">[${timestamp}]</span> ${message}`;
+            
+            // Remove "No activity yet" message if it exists
+            const noActivity = logContainer.querySelector('.text-gray-500');
+            if (noActivity && noActivity.textContent === 'No activity yet') {
+                noActivity.remove();
+            }
+            
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

@@ -127,6 +127,33 @@ type Session struct {
 	CreatedAt     time.Time              `json:"created_at"`
 	UpdatedAt     time.Time              `json:"updated_at"`
 	CompletedAt   *time.Time             `json:"completed_at,omitempty"`
+	DynamicState  *DynamicSessionState   `json:"dynamic_state,omitempty"`
+}
+
+// DynamicSessionState represents the persistent state of dynamic nodes
+type DynamicSessionState struct {
+	BusinessType     string                    `json:"business_type"`
+	NodeStatuses     map[string]NodeStatusInfo `json:"node_statuses"`
+	LastEvaluatedAt  time.Time                 `json:"last_evaluated_at"`
+	CompletionStatus map[string]interface{}    `json:"completion_status"`
+}
+
+// NodeStatusInfo represents the persistent status information for a node
+type NodeStatusInfo struct {
+	Status        string                 `json:"status"`
+	InitialStatus string                 `json:"initial_status"`
+	Dependencies  []DependencyInfo       `json:"dependencies"`
+	LastUpdatedAt time.Time              `json:"last_updated_at"`
+	Metadata      map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// DependencyInfo represents a persistent dependency
+type DependencyInfo struct {
+	FieldID      string      `json:"field_id"`
+	Operator     string      `json:"operator"`
+	Value        interface{} `json:"value"`
+	Condition    string      `json:"condition"`
+	BusinessType string      `json:"business_type,omitempty"`
 }
 
 // SessionStatus represents the status of an onboarding session

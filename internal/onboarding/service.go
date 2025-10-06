@@ -350,6 +350,11 @@ func (s *Service) GetSessionHistory(ctx context.Context, sessionID string) ([]Se
 	return session.History, nil
 }
 
+// SaveSession saves a session to storage
+func (s *Service) SaveSession(ctx context.Context, session *Session) error {
+	return s.storage.SaveSession(ctx, session)
+}
+
 // RetrySession retries a failed session
 func (s *Service) RetrySession(ctx context.Context, sessionID string) error {
 	session, err := s.storage.GetSession(ctx, sessionID)

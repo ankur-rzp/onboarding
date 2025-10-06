@@ -14,6 +14,8 @@ import (
 	"onboarding-system/internal/config"
 	"onboarding-system/internal/onboarding"
 	"onboarding-system/internal/storage"
+
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
@@ -39,10 +41,17 @@ func main() {
 	// Initialize API handlers
 	handlers := api.NewHandlers(onboardingService)
 
-	// Setup HTTP server
+	// Initialize dynamic API handlers
+	dynamicService := onboarding.NewDynamicService(store, cfg, logrus.New())
+	dynamicHandlers := api.NewDynamicHandlers(dynamicService, logrus.New())
+
+	// Setup HTTP server with combined router
+	router := handlers.Router()
+	dynamicHandlers.RegisterDynamicRoutes(router)
+
 	server := &http.Server{
 		Addr:    cfg.Server.Address,
-		Handler: handlers.Router(),
+		Handler: router,
 	}
 
 	// Start server in a goroutine
