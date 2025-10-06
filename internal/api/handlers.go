@@ -117,6 +117,8 @@ func (h *Handlers) Router() *mux.Router {
 	api.HandleFunc("/admin/sessions/{id}/details", h.corsHandler).Methods("OPTIONS")
 	api.HandleFunc("/admin/graphs/{id}/visual", h.GetGraphVisual).Methods("GET")
 	api.HandleFunc("/admin/graphs/{id}/visual", h.corsHandler).Methods("OPTIONS")
+	api.HandleFunc("/admin/sessions/{id}/graph-visual", h.GetSessionGraphVisual).Methods("GET")
+	api.HandleFunc("/admin/sessions/{id}/graph-visual", h.corsHandler).Methods("OPTIONS")
 
 	// Eligible nodes route
 	api.HandleFunc("/sessions/{id}/eligible-nodes", h.GetEligibleNodes).Methods("GET")
@@ -128,6 +130,12 @@ func (h *Handlers) Router() *mux.Router {
 
 	// Health check
 	router.HandleFunc("/health", h.HealthCheck).Methods("GET")
+
+	// Serve HTML files directly
+	router.HandleFunc("/", h.ServeIndex).Methods("GET")
+	router.HandleFunc("/dynamic-onboarding-ui.html", h.ServeHTML("dynamic-onboarding-ui.html")).Methods("GET")
+	router.HandleFunc("/admin-dashboard.html", h.ServeHTML("admin-dashboard.html")).Methods("GET")
+	router.HandleFunc("/test-ui.html", h.ServeHTML("test-ui.html")).Methods("GET")
 
 	return router
 }
@@ -871,6 +879,34 @@ func (h *Handlers) GetGraphVisual(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(visualGraph)
 }
 
+// GetSessionGraphVisual returns visual representation of the graph with session-specific path highlighting
+func (h *Handlers) GetSessionGraphVisual(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	sessionID := vars["id"]
+
+	// Get session
+	session, err := h.onboardingService.GetSession(r.Context(), sessionID)
+	if err != nil {
+		h.logger.WithError(err).Error("Failed to get session")
+		http.Error(w, "Session not found", http.StatusNotFound)
+		return
+	}
+
+	// Get graph
+	graph, err := h.onboardingService.GetGraph(r.Context(), session.GraphID)
+	if err != nil {
+		h.logger.WithError(err).Error("Failed to get graph")
+		http.Error(w, "Graph not found", http.StatusNotFound)
+		return
+	}
+
+	// Convert to visual format with session path highlighting
+	visualGraph := h.convertToSessionVisualGraph(graph, session)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(visualGraph)
+}
+
 // getSessionUploadProgress returns all upload progress for a session
 func (h *Handlers) getSessionUploadProgress(sessionID string) map[string]*UploadProgress {
 	progress := make(map[string]*UploadProgress)
@@ -922,6 +958,93 @@ func (h *Handlers) convertToVisualGraph(graph *onboarding.Graph) map[string]inte
 		"edges":       edges,
 		"created_at":  graph.CreatedAt,
 		"updated_at":  graph.UpdatedAt,
+	}
+}
+
+// convertToSessionVisualGraph converts graph to visual format with session path highlighting
+func (h *Handlers) convertToSessionVisualGraph(graph *onboarding.Graph, session *onboarding.Session) map[string]interface{} {
+	nodes := make([]map[string]interface{}, 0, len(graph.Nodes))
+	edges := make([]map[string]interface{}, 0, len(graph.Edges))
+
+	// Track visited nodes and edges from session history
+	visitedNodes := make(map[string]bool)
+	visitedEdges := make(map[string]bool)
+
+	// Mark current node as visited
+	if session.CurrentNodeID != "" {
+		visitedNodes[session.CurrentNodeID] = true
+	}
+
+	// Mark nodes as visited based on session data
+	for fieldName := range session.Data {
+		// Find which node this field belongs to
+		for nodeID, node := range graph.Nodes {
+			for _, field := range node.Fields {
+				if field.ID == fieldName {
+					visitedNodes[nodeID] = true
+					break
+				}
+			}
+		}
+	}
+
+	// Mark edges as visited based on session history
+	// Since we don't have explicit edge tracking in history, we'll infer visited edges
+	// by looking at consecutive forward actions in the history
+	for i := 0; i < len(session.History)-1; i++ {
+		currentStep := session.History[i]
+		nextStep := session.History[i+1]
+
+		if currentStep.Action == "forward" && nextStep.Action == "forward" {
+			// Find the edge ID for this transition
+			for edgeID, edge := range graph.Edges {
+				if edge.FromNodeID == currentStep.NodeID && edge.ToNodeID == nextStep.NodeID {
+					visitedEdges[edgeID] = true
+					break
+				}
+			}
+		}
+	}
+
+	// Convert nodes with session-specific highlighting
+	for _, node := range graph.Nodes {
+		nodeData := map[string]interface{}{
+			"id":          node.ID,
+			"name":        node.Name,
+			"description": node.Description,
+			"type":        node.Type,
+			"fields":      node.Fields,
+			"validation":  node.Validation,
+			"visited":     visitedNodes[node.ID],
+			"current":     node.ID == session.CurrentNodeID,
+		}
+		nodes = append(nodes, nodeData)
+	}
+
+	// Convert edges with session-specific highlighting
+	for _, edge := range graph.Edges {
+		edgeData := map[string]interface{}{
+			"id":          edge.ID,
+			"from":        edge.FromNodeID,
+			"to":          edge.ToNodeID,
+			"condition":   edge.Condition,
+			"description": edge.Condition.Type,
+			"visited":     visitedEdges[edge.ID],
+		}
+		edges = append(edges, edgeData)
+	}
+
+	return map[string]interface{}{
+		"id":             graph.ID,
+		"name":           graph.Name,
+		"description":    graph.Description,
+		"nodes":          nodes,
+		"edges":          edges,
+		"session_id":     session.ID,
+		"session_status": session.Status,
+		"current_node":   session.CurrentNodeID,
+		"created_at":     graph.CreatedAt,
+		"updated_at":     graph.UpdatedAt,
 	}
 }
 
@@ -1089,7 +1212,7 @@ func (h *Handlers) calculateSessionProgress(session *onboarding.Session) int {
 	}
 
 	// Also count current node if it has data (user has filled it but not moved forward yet)
-	if session.Data != nil && len(session.Data) > 0 {
+	if len(session.Data) > 0 {
 		completedNodes[session.CurrentNodeID] = true
 	}
 
@@ -1183,4 +1306,28 @@ func (h *Handlers) DownloadFile(w http.ResponseWriter, r *http.Request) {
 		"file_name": fileName,
 		"file_size": fileInfo.Size(),
 	}).Info("File downloaded successfully")
+}
+
+// ServeIndex serves the main index page
+func (h *Handlers) ServeIndex(w http.ResponseWriter, r *http.Request) {
+	// Redirect to the main UI
+	http.Redirect(w, r, "/dynamic-onboarding-ui.html", http.StatusFound)
+}
+
+// ServeHTML serves HTML files
+func (h *Handlers) ServeHTML(filename string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Set content type
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+		// Read and serve the HTML file
+		content, err := os.ReadFile(filename)
+		if err != nil {
+			h.logger.WithError(err).WithField("filename", filename).Error("Failed to read HTML file")
+			http.Error(w, "File not found", http.StatusNotFound)
+			return
+		}
+
+		w.Write(content)
+	}
 }

@@ -465,80 +465,143 @@
             }
         }
 
+        // Load session-specific graph visualization
+        async function loadSessionGraphVisual(sessionId) {
+            console.log('Loading session graph visual for session:', sessionId);
+            showGraphLoading();
+            hideGraphError();
+
+            try {
+                const response = await axios.get(`${API_BASE}/admin/sessions/${sessionId}/graph-visual`);
+                console.log('Session graph data received:', response.data);
+                currentGraph = response.data;
+                
+                // Switch to graph view if we're in sessions view
+                if (currentView === 'sessions') {
+                    switchToGraphView();
+                }
+                
+                await renderGraph();
+                updateGraphStats();
+                hideGraphLoading();
+                
+                // Update the graph title to show it's session-specific
+                const graphTitle = document.querySelector('.graph-title');
+                if (graphTitle) {
+                    graphTitle.textContent = `Session Graph Visualization - ${sessionId.substring(0, 8)}...`;
+                }
+                
+                console.log('Session graph visualization loaded successfully');
+            } catch (error) {
+                console.error('Failed to load session graph visual:', error);
+                showGraphError(error.message);
+                hideGraphLoading();
+            }
+        }
+
         // Render graph using vis-network
         async function renderGraph() {
             if (!currentGraph) return;
 
             const container = document.getElementById('network');
             
-            // Prepare nodes with enhanced styling
+            // Prepare nodes with enhanced styling and session-specific highlighting
             const nodes = new vis.DataSet(
-                currentGraph.nodes.map(node => ({
-                    id: node.id,
-                    label: node.name,
-                    color: {
-                        background: getNodeColor(node.type),
-                        border: getNodeBorderColor(node.type),
-                        highlight: {
-                            background: getNodeHighlightColor(node.type),
-                            border: getNodeBorderColor(node.type)
+                currentGraph.nodes.map(node => {
+                    let nodeColor = getNodeColor(node.type);
+                    let borderColor = getNodeBorderColor(node.type);
+                    let borderWidth = 3;
+                    
+                    // Apply session-specific highlighting if available
+                    if (node.visited) {
+                        nodeColor = '#ef4444'; // Red for visited nodes
+                        borderColor = '#dc2626';
+                        borderWidth = 4;
+                    }
+                    if (node.current) {
+                        nodeColor = '#f59e0b'; // Orange for current node
+                        borderColor = '#d97706';
+                        borderWidth = 5;
+                    }
+                    
+                    return {
+                        id: node.id,
+                        label: node.name,
+                        color: {
+                            background: nodeColor,
+                            border: borderColor,
+                            highlight: {
+                                background: getNodeHighlightColor(node.type),
+                                border: borderColor
+                            },
+                            hover: {
+                                background: getNodeHoverColor(node.type),
+                                border: borderColor
+                            }
                         },
-                        hover: {
-                            background: getNodeHoverColor(node.type),
-                            border: getNodeBorderColor(node.type)
-                        }
-                    },
-                    shape: getNodeShape(node.type),
-                    size: getNodeSize(node.type),
-                    font: {
-                        color: '#ffffff',
-                        size: 14,
-                        face: 'Inter, sans-serif',
-                        strokeWidth: 2,
-                        strokeColor: '#1e293b'
-                    },
-                    borderWidth: 3,
-                    shadow: {
-                        enabled: true,
-                        color: 'rgba(0,0,0,0.2)',
-                        size: 10,
-                        x: 2,
-                        y: 2
-                    },
-                    title: createNodeTooltip(node)
-                }))
+                        shape: getNodeShape(node.type),
+                        size: getNodeSize(node.type),
+                        font: {
+                            color: '#ffffff',
+                            size: 14,
+                            face: 'Inter, sans-serif',
+                            strokeWidth: 2,
+                            strokeColor: '#1e293b'
+                        },
+                        borderWidth: borderWidth,
+                        shadow: {
+                            enabled: true,
+                            color: 'rgba(0,0,0,0.2)',
+                            size: 10,
+                            x: 2,
+                            y: 2
+                        },
+                        title: createNodeTooltip(node)
+                    };
+                })
             );
 
-            // Prepare edges with enhanced styling
+            // Prepare edges with enhanced styling and session-specific highlighting
             const edges = new vis.DataSet(
-                currentGraph.edges.map(edge => ({
-                    id: edge.id,
-                    from: edge.from,
-                    to: edge.to,
-                    label: edge.description || '',
-                    arrows: {
-                        to: {
-                            enabled: true,
-                            scaleFactor: 1.2,
-                            type: 'arrow'
-                        }
-                    },
-                    color: {
-                        color: '#64748b',
-                        highlight: '#3b82f6',
-                        hover: '#1d4ed8'
-                    },
-                    width: 3,
-                    smooth: {
-                        type: 'curvedCW',
-                        roundness: 0.2
-                    },
-                    font: {
-                        color: '#64748b',
-                        size: 12,
-                        face: 'Inter, sans-serif'
+                currentGraph.edges.map(edge => {
+                    let edgeColor = '#64748b';
+                    let edgeWidth = 2;
+                    
+                    // Apply session-specific highlighting if available
+                    if (edge.visited) {
+                        edgeColor = '#ef4444'; // Red for visited edges
+                        edgeWidth = 4;
                     }
-                }))
+                    
+                    return {
+                        id: edge.id,
+                        from: edge.from,
+                        to: edge.to,
+                        label: edge.description || '',
+                        arrows: {
+                            to: {
+                                enabled: true,
+                                scaleFactor: 1.2,
+                                type: 'arrow'
+                            }
+                        },
+                        color: {
+                            color: edgeColor,
+                            highlight: '#3b82f6',
+                            hover: '#1d4ed8'
+                        },
+                        width: edgeWidth,
+                        smooth: {
+                            type: 'curvedCW',
+                            roundness: 0.2
+                        },
+                        font: {
+                            color: edgeColor,
+                            size: 12,
+                            face: 'Inter, sans-serif'
+                        }
+                    };
+                })
             );
 
             // Create network
@@ -650,18 +713,25 @@
         // Get network options based on current layout
         function getNetworkOptions() {
             const baseOptions = {
+                layout: {
+                    improvedLayout: true,
+                    hierarchical: {
+                        enabled: false
+                    }
+                },
                 physics: {
                     enabled: true,
                     stabilization: { 
-                        iterations: 200,
+                        iterations: 300,
                         updateInterval: 50
                     },
                     barnesHut: {
-                        gravitationalConstant: -2000,
-                        centralGravity: 0.3,
-                        springLength: 95,
-                        springConstant: 0.04,
-                        damping: 0.09
+                        gravitationalConstant: -8000,
+                        centralGravity: 0.1,
+                        springLength: 200,
+                        springConstant: 0.02,
+                        damping: 0.09,
+                        avoidOverlap: 1
                     }
                 },
                 interaction: {
@@ -669,16 +739,28 @@
                     selectConnectedEdges: false,
                     tooltipDelay: 200,
                     hideEdgesOnDrag: false,
-                    hideNodesOnDrag: false
+                    hideNodesOnDrag: false,
+                    dragNodes: true,
+                    dragView: true,
+                    zoomView: true
                 },
                 nodes: {
                     font: {
                         multi: 'html'
+                    },
+                    margin: 10,
+                    scaling: {
+                        min: 10,
+                        max: 30
                     }
                 },
                 edges: {
                     font: {
                         multi: 'html'
+                    },
+                    scaling: {
+                        min: 1,
+                        max: 5
                     }
                 }
             };
@@ -944,9 +1026,14 @@
                         </div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <button onclick="showSessionDetails('${session.id}')" class="text-blue-600 hover:text-blue-900">
-                            View Details
-                        </button>
+                        <div class="flex space-x-2">
+                            <button onclick="showSessionDetails('${session.id}')" class="text-blue-600 hover:text-blue-900">
+                                View Details
+                            </button>
+                            <button onclick="loadSessionGraphVisual('${session.id}')" class="text-green-600 hover:text-green-900">
+                                View Graph
+                            </button>
+                        </div>
                     </td>
                 `;
                 tbody.appendChild(row);
@@ -1100,6 +1187,12 @@
                                 </div>
                             `).join('')}
                         </div>
+                    </div>
+                    
+                    <div class="mt-6 pt-4 border-t">
+                        <button onclick="loadSessionGraphVisual('${details.session_id}')" class="w-full bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors">
+                            📊 View Session Graph Path
+                        </button>
                     </div>
                 </div>
             `;

@@ -93,6 +93,14 @@ func seedDemoDataIfNeeded(service *onboarding.Service) {
 			log.Printf("Created unified onboarding graph with ID: %s", unifiedGraph.ID)
 		}
 
+		// Create production onboarding graph
+		productionGraph := examples.CreateProductionOnboardingGraph()
+		if err := service.CreateGraph(ctx, productionGraph); err != nil {
+			log.Printf("Failed to create production graph: %v", err)
+		} else {
+			log.Printf("Created production onboarding graph with ID: %s", productionGraph.ID)
+		}
+
 		log.Println("Demo data seeding completed!")
 	} else {
 		log.Printf("Found %d existing graphs, skipping seeding", len(graphs))

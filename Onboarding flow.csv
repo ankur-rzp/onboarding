@@ -1,0 +1,18 @@
+Section,Component,Individual
+Business type,PAN number,Mandatory
+,Business type,Mandatory
+Payment channel,Payment channel ,"Mandatory ; possible values [Website,App,No-code]"
+,Website url,Rule : Mandatory if `Website` selected in `Payment channel` else Optional
+,Android url,Rule : Mandatory if `APP` selected in `Payment channel` else Optional
+,iOS url,Rule : Mandatory if `APP` selected in `Payment channel` else Optional
+MCC & Policy verification,Subcategory ,Rules: Fetched from website OR Selected via business description  
+,Policy pages,Rules: Fetched from website OR collect input for missing pages and host policy pages
+Business details,Business document ,Optional
+,BMC document,Mandatory on certain `SubCategory` else Optional 
+,Authorised Signatory name,Mandatory
+,PAN of Authorised Signatory,Optional
+,Aadhar of Authorised Signatory,Mandatory
+,Bank account,Mandatory
+,Business name,Mandatory
+,Brand name,Mandatory
+,Business address,Mandatory

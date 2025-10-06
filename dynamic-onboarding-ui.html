@@ -219,11 +219,14 @@
             }
 
             try {
+                console.log('Fetching eligible nodes for session:', currentSession.id);
                 const response = await axios.get(`${API_BASE}/sessions/${currentSession.id}/eligible-nodes`);
                 eligibleNodes = response.data.eligible_nodes || [];
                 console.log('Fetched eligible nodes:', eligibleNodes);
+                console.log('Eligible nodes count:', eligibleNodes.length);
                 
                 // Update navigation map with new eligible nodes
+                console.log('Calling buildNavigationMap after fetching eligible nodes');
                 buildNavigationMap();
             } catch (error) {
                 console.error('Error fetching eligible nodes:', error);
@@ -231,6 +234,7 @@
                 eligibleNodes = allNodes
                     .filter(node => node.type !== 'end' && node.name !== 'Onboarding Complete')
                     .map(node => node.id);
+                console.log('Using fallback eligible nodes:', eligibleNodes);
             }
         }
 
@@ -363,30 +367,37 @@
         function isNodeAvailable(node) {
             // Hide completion/end nodes - they should never be clickable
             if (node.type === 'end' || node.name === 'Onboarding Complete') {
+                console.log(`Node ${node.name} (${node.id}) is not available: end/completion node`);
                 return false;
             }
             
-            // User Type Selection (start node) is always available - users can go back and change their selection
-            if (node.name === 'User Type Selection') {
+            // Start nodes are always available - users can go back and change their selection
+            if (node.name === 'User Type Selection' || node.name === 'Business Type Selection') {
+                console.log(`Node ${node.name} (${node.id}) is available: start node`);
                 return true;
             }
             
-            // If no user type selected, only show User Type Selection
-            if (!currentSession || !currentSession.data || !currentSession.data.user_type) {
+            // If no user type or business type selected, only show start nodes
+            if (!currentSession || !currentSession.data || (!currentSession.data.user_type && !currentSession.data.business_type)) {
+                console.log(`Node ${node.name} (${node.id}) is not available: no user/business type selected`);
                 return false;
             }
             
             // Check if this node is in the eligible nodes list
             if (eligibleNodes && eligibleNodes.length > 0) {
-                return eligibleNodes.includes(node.id);
+                const isEligible = eligibleNodes.includes(node.id);
+                console.log(`Node ${node.name} (${node.id}) eligibility: ${isEligible} (eligible nodes: ${eligibleNodes.length})`);
+                return isEligible;
             }
             
             // If it's the current node, it's always available
             if (currentNode && currentNode.id === node.id) {
+                console.log(`Node ${node.name} (${node.id}) is available: current node`);
                 return true;
             }
             
             // Fallback: let backend handle all other navigation logic
+            console.log(`Node ${node.name} (${node.id}) is available: fallback`);
             return true;
         }
 
@@ -1386,9 +1397,9 @@
                 // Recalculate available paths after data update
                 buildNavigationMap();
                 
-                // If this was User Type Selection, fetch eligible nodes from backend
-                if (backendCurrentNode.name === 'User Type Selection') {
-                    console.log('User type selection completed, fetching eligible nodes...');
+                // If this was User Type Selection or Business Type Selection, fetch eligible nodes from backend
+                if (backendCurrentNode.name === 'User Type Selection' || backendCurrentNode.name === 'Business Type Selection') {
+                    console.log('Start node selection completed, fetching eligible nodes...');
                     await fetchEligibleNodes();
                 }
                 

@@ -145,6 +145,32 @@ func (s *Service) SubmitNodeData(ctx context.Context, sessionID string, data map
 		"session_data":  session.Data,
 	}).Info("Path completeness validation result")
 
+	// Check if any rule group passes for production onboarding (even if path is not complete)
+	if !pathValid {
+		// Check if this is production onboarding (has business_type)
+		if businessType, hasBusinessType := session.Data["business_type"]; hasBusinessType {
+			ruleGroupPassed, ruleGroupMissing := s.engine.ValidateProductionOnboardingCompleteness(ctx, graph, session.CurrentNodeID, session.Data, businessType)
+			if ruleGroupPassed {
+				s.logger.WithFields(logrus.Fields{
+					"session_id":    sessionID,
+					"current_node":  session.CurrentNodeID,
+					"business_type": businessType,
+				}).Info("Rule group passed, marking session as completed")
+				session.Status = SessionStatusCompleted
+				now := time.Now()
+				session.CompletedAt = &now
+				pathValid = true // Set to true so we skip the navigation logic
+			} else {
+				s.logger.WithFields(logrus.Fields{
+					"session_id":         sessionID,
+					"current_node":       session.CurrentNodeID,
+					"business_type":      businessType,
+					"rule_group_missing": ruleGroupMissing,
+				}).Info("Rule group validation failed, continuing with flow")
+			}
+		}
+	}
+
 	if pathValid {
 		// All required nodes completed - mark as completed
 		s.logger.WithFields(logrus.Fields{
@@ -156,41 +182,64 @@ func (s *Service) SubmitNodeData(ctx context.Context, sessionID string, data map
 		session.CompletedAt = &now
 		// Keep current node ID for UI to show completion
 	} else {
-		// Not all required nodes completed - find next unfilled node to navigate to
-		nextUnfilledNodeID := s.engine.GetFirstMissingNode(ctx, graph, missingNodes, session.Data)
-		if nextUnfilledNodeID != "" {
-			s.logger.WithFields(logrus.Fields{
-				"session_id":    sessionID,
-				"current_node":  session.CurrentNodeID,
-				"next_node":     nextUnfilledNodeID,
-				"missing_nodes": missingNodes,
-			}).Info("Navigating to next unfilled required node")
-			session.CurrentNodeID = nextUnfilledNodeID
-		} else {
-			// No specific missing node found, try to get next available node
+		// Check if this is production onboarding (has business_type)
+		_, hasBusinessType := session.Data["business_type"]
+		if hasBusinessType {
+			// For production onboarding, follow the sequential flow defined by edges
 			nextNodes := s.engine.GetNextNodes(ctx, graph, session.CurrentNodeID, session.Data)
 			if len(nextNodes) > 0 {
-				// Find the first unfilled node from available next nodes
-				nextUnfilledNode := s.findNextUnfilledNode(ctx, graph, nextNodes, session.Data)
-				if nextUnfilledNode != nil {
-					s.logger.WithFields(logrus.Fields{
-						"session_id":     sessionID,
-						"current_node":   session.CurrentNodeID,
-						"next_node":      nextUnfilledNode.ID,
-						"next_node_name": nextUnfilledNode.Name,
-					}).Info("Navigating to next unfilled node from available paths")
-					session.CurrentNodeID = nextUnfilledNode.ID
-				} else {
-					// All next nodes are filled, navigate to the first one
-					session.CurrentNodeID = nextNodes[0].ID
-				}
+				// Navigate to the next node in the sequence
+				s.logger.WithFields(logrus.Fields{
+					"session_id":     sessionID,
+					"current_node":   session.CurrentNodeID,
+					"next_node":      nextNodes[0].ID,
+					"next_node_name": nextNodes[0].Name,
+				}).Info("Navigating to next node in production onboarding sequence")
+				session.CurrentNodeID = nextNodes[0].ID
 			} else {
 				// No next nodes available, stay on current node
 				s.logger.WithFields(logrus.Fields{
+					"session_id":   sessionID,
+					"current_node": session.CurrentNodeID,
+				}).Warn("No next nodes available in production onboarding sequence")
+			}
+		} else {
+			// Legacy logic for unified onboarding - find next unfilled node to navigate to
+			nextUnfilledNodeID := s.engine.GetFirstMissingNode(ctx, graph, missingNodes, session.Data)
+			if nextUnfilledNodeID != "" {
+				s.logger.WithFields(logrus.Fields{
 					"session_id":    sessionID,
 					"current_node":  session.CurrentNodeID,
+					"next_node":     nextUnfilledNodeID,
 					"missing_nodes": missingNodes,
-				}).Warn("No next nodes available, staying on current node")
+				}).Info("Navigating to next unfilled required node")
+				session.CurrentNodeID = nextUnfilledNodeID
+			} else {
+				// No specific missing node found, try to get next available node
+				nextNodes := s.engine.GetNextNodes(ctx, graph, session.CurrentNodeID, session.Data)
+				if len(nextNodes) > 0 {
+					// Find the first unfilled node from available next nodes
+					nextUnfilledNode := s.findNextUnfilledNode(ctx, graph, nextNodes, session.Data)
+					if nextUnfilledNode != nil {
+						s.logger.WithFields(logrus.Fields{
+							"session_id":     sessionID,
+							"current_node":   session.CurrentNodeID,
+							"next_node":      nextUnfilledNode.ID,
+							"next_node_name": nextUnfilledNode.Name,
+						}).Info("Navigating to next unfilled node from available paths")
+						session.CurrentNodeID = nextUnfilledNode.ID
+					} else {
+						// All next nodes are filled, navigate to the first one
+						session.CurrentNodeID = nextNodes[0].ID
+					}
+				} else {
+					// No next nodes available, stay on current node
+					s.logger.WithFields(logrus.Fields{
+						"session_id":    sessionID,
+						"current_node":  session.CurrentNodeID,
+						"missing_nodes": missingNodes,
+					}).Warn("No next nodes available, staying on current node")
+				}
 			}
 		}
 	}
@@ -408,46 +457,70 @@ func (s *Service) GetEligibleNodes(ctx context.Context, sessionID string) ([]str
 
 	eligibleNodes := make([]string, 0)
 
-	// If no user type selected, only User Type Selection is eligible
-	if session.Data == nil || session.Data["user_type"] == nil {
-		// Find User Type Selection node
+	// If no user type or business type selected, only start nodes are eligible
+	if session.Data == nil || (session.Data["user_type"] == nil && session.Data["business_type"] == nil) {
+		// Find start nodes (User Type Selection or Business Type Selection)
 		for nodeID, node := range graph.Nodes {
-			if node.Name == "User Type Selection" {
+			if node.Name == "User Type Selection" || node.Name == "Business Type Selection" {
 				eligibleNodes = append(eligibleNodes, nodeID)
-				break
 			}
 		}
 		return eligibleNodes, nil
 	}
 
-	userType := session.Data["user_type"].(string)
+	// Check if this is production onboarding (has business_type) or unified onboarding (has user_type)
+	s.logger.WithFields(logrus.Fields{
+		"session_id":        sessionID,
+		"session_data":      session.Data,
+		"has_business_type": session.Data["business_type"] != nil,
+		"has_user_type":     session.Data["user_type"] != nil,
+	}).Info("Checking eligible nodes logic")
 
-	// Based on user type, determine eligible nodes
-	for nodeID, node := range graph.Nodes {
-		// Skip completion/end nodes
-		if node.Type == "end" || node.Name == "Onboarding Complete" {
-			continue
-		}
+	if session.Data["business_type"] != nil {
+		// Production onboarding - all nodes are eligible for navigation
+		s.logger.WithFields(logrus.Fields{
+			"session_id": sessionID,
+		}).Info("Production onboarding detected - making all nodes eligible")
 
-		// User Type Selection should remain available even after completion
-		// so users can go back and change their selection
-
-		// For individual users, exclude company-specific nodes
-		if userType == "individual" {
-			if node.Name == "Business Type" || node.Name == "Company Information" || node.Name == "Tax Information" {
+		for nodeID, node := range graph.Nodes {
+			// Skip completion/end nodes
+			if node.Type == "end" || node.Name == "Onboarding Complete" {
 				continue
 			}
+			// All other nodes are eligible for production onboarding
+			eligibleNodes = append(eligibleNodes, nodeID)
 		}
+	} else if session.Data["user_type"] != nil {
+		// Unified onboarding - apply user type specific logic
+		userType := session.Data["user_type"].(string)
 
-		// For company users, exclude individual-specific nodes
-		if userType == "company" {
-			if node.Name == "Personal Information" {
+		// Based on user type, determine eligible nodes
+		for nodeID, node := range graph.Nodes {
+			// Skip completion/end nodes
+			if node.Type == "end" || node.Name == "Onboarding Complete" {
 				continue
 			}
-		}
 
-		// All other nodes are eligible
-		eligibleNodes = append(eligibleNodes, nodeID)
+			// User Type Selection should remain available even after completion
+			// so users can go back and change their selection
+
+			// For individual users, exclude company-specific nodes
+			if userType == "individual" {
+				if node.Name == "Business Type" || node.Name == "Company Information" || node.Name == "Tax Information" {
+					continue
+				}
+			}
+
+			// For company users, exclude individual-specific nodes
+			if userType == "company" {
+				if node.Name == "Personal Information" {
+					continue
+				}
+			}
+
+			// All other nodes are eligible
+			eligibleNodes = append(eligibleNodes, nodeID)
+		}
 	}
 
 	return eligibleNodes, nil
