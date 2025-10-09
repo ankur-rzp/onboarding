@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edge Visualization Test</title>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-8">
+    <div class="max-w-7xl mx-auto">
+        <h1 class="text-3xl font-bold mb-8">Edge Visualization Test</h1>
+        
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Left Panel: Graph Selection -->
+            <div>
+                <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+                    <h2 class="text-xl font-bold mb-4">Available Graphs</h2>
+                    <div id="graphsList" class="space-y-2">
+                        <div class="text-gray-500">Loading graphs...</div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <h2 class="text-xl font-bold mb-4">Node Categories</h2>
+                    <div class="space-y-2">
+                        <div class="flex items-center space-x-2">
+                            <div class="w-3 h-3 bg-green-500 rounded-full"></div>
+                            <span class="text-sm">Start Node</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div class="w-3 h-3 bg-blue-500 rounded-full"></div>
+                            <span class="text-sm">Independent Nodes</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div class="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                            <span class="text-sm">Dependent Nodes</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div class="w-3 h-3 bg-purple-500 rounded-full"></div>
+                            <span class="text-sm">Completion Node</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Center Panel: Node Details -->
+            <div>
+                <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+                    <h2 class="text-xl font-bold mb-4">Node Details</h2>
+                    <div id="nodeDetails">
+                        <div class="text-gray-500 text-center py-8">
+                            Select a node to view details
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <h2 class="text-xl font-bold mb-4">Edge Analysis</h2>
+                    <div id="edgeAnalysis">
+                        <div class="text-gray-500 text-center py-8">
+                            Select a graph to view edge analysis
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel: Graph Visualization -->
+            <div>
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <h2 class="text-xl font-bold mb-4">Graph Structure</h2>
+                    <div id="graphStructure" class="space-y-4">
+                        <div class="text-gray-500 text-center py-8">
+                            Select a graph to view structure
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Panel: Debug Log -->
+        <div class="mt-8">
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-xl font-bold mb-4">Debug Log</h2>
+                <div class="bg-gray-50 p-4 rounded h-64 overflow-y-auto">
+                    <div id="debugLog" class="text-sm text-gray-700 space-y-1">
+                        <div class="text-gray-500">No logs yet</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080/api/v1';
+        let currentGraph = null;
+
+        function log(message) {
+            const logContainer = document.getElementById('debugLog');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `<span class="text-gray-500">[${timestamp}]</span> ${message}`;
+            
+            // Remove "No logs yet" message if it exists
+            const noLogs = logContainer.querySelector('.text-gray-500');
+            if (noLogs && noLogs.textContent === 'No logs yet') {
+                noLogs.remove();
+            }
+            
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        async function loadGraphs() {
+            try {
+                log('📊 Loading available graphs...');
+                const response = await axios.get(`${API_BASE}/graphs`);
+                const graphs = response.data || [];
+                
+                const graphsList = document.getElementById('graphsList');
+                graphsList.innerHTML = '';
+                
+                graphs.forEach(graph => {
+                    const graphDiv = document.createElement('div');
+                    graphDiv.className = 'p-3 border rounded-lg cursor-pointer hover:bg-gray-50';
+                    graphDiv.innerHTML = `
+                        <div class="font-medium">${graph.name}</div>
+                        <div class="text-sm text-gray-600">${graph.description}</div>
+                        <div class="text-xs text-gray-500 mt-1">ID: ${graph.id.substring(0, 8)}...</div>
+                    `;
+                    graphDiv.onclick = () => selectGraph(graph);
+                    graphsList.appendChild(graphDiv);
+                });
+                
+                log(`✅ Loaded ${graphs.length} graphs`);
+            } catch (error) {
+                log(`❌ Error loading graphs: ${error.message}`);
+            }
+        }
+
+        function selectGraph(graph) {
+            currentGraph = graph;
+            log(`📊 Selected graph: ${graph.name}`);
+            analyzeGraph(graph);
+        }
+
+        function analyzeGraph(graph) {
+            log(`🔍 Analyzing graph: ${graph.name}`);
+            log(`📊 Graph data:`, graph);
+            
+            // Handle different graph data structures
+            let nodes = [];
+            let edges = [];
+            
+            if (graph.nodes) {
+                // If nodes is an object, convert to array
+                if (typeof graph.nodes === 'object' && !Array.isArray(graph.nodes)) {
+                    nodes = Object.values(graph.nodes);
+                } else if (Array.isArray(graph.nodes)) {
+                    nodes = graph.nodes;
+                }
+            }
+            
+            if (graph.edges) {
+                // If edges is an object, convert to array
+                if (typeof graph.edges === 'object' && !Array.isArray(graph.edges)) {
+                    edges = Object.values(graph.edges);
+                } else if (Array.isArray(graph.edges)) {
+                    edges = graph.edges;
+                }
+            }
+            
+            log(`📊 Found ${nodes.length} nodes and ${edges.length} edges`);
+            
+            // Categorize nodes
+            const startNodes = nodes.filter(n => n.type === 'start');
+            const endNodes = nodes.filter(n => n.type === 'end');
+            const independentNodes = nodes.filter(n => n.is_independent && n.type !== 'start' && n.type !== 'end');
+            const dependentNodes = nodes.filter(n => n.is_dependent);
+            
+            // Build graph structure visualization
+            const graphStructure = document.getElementById('graphStructure');
+            
+            if (nodes.length === 0) {
+                graphStructure.innerHTML = `
+                    <div class="text-center py-8 text-gray-500">
+                        <div class="text-lg font-medium">No nodes found</div>
+                        <div class="text-sm">Graph data structure might be different than expected</div>
+                        <div class="text-xs mt-2">Check debug log for details</div>
+                    </div>
+                `;
+                log(`❌ No nodes found in graph data`);
+                return;
+            }
+            
+            graphStructure.innerHTML = `
+                <div class="space-y-4">
+                    <div class="text-sm text-gray-600">
+                        <strong>Total Nodes:</strong> ${nodes.length} | 
+                        <strong>Total Edges:</strong> ${edges.length}
+                    </div>
+                    
+                    <div class="space-y-3">
+                        <div class="p-3 bg-green-50 rounded-lg">
+                            <div class="font-medium text-green-800">Start Nodes (${startNodes.length})</div>
+                            ${startNodes.length > 0 ? startNodes.map(n => `<div class="text-sm text-green-600 ml-2">• ${n.name}</div>`).join('') : '<div class="text-sm text-gray-500 ml-2">None</div>'}
+                        </div>
+                        
+                        <div class="p-3 bg-blue-50 rounded-lg">
+                            <div class="font-medium text-blue-800">Independent Nodes (${independentNodes.length})</div>
+                            ${independentNodes.length > 0 ? independentNodes.map(n => `<div class="text-sm text-blue-600 ml-2">• ${n.name}</div>`).join('') : '<div class="text-sm text-gray-500 ml-2">None</div>'}
+                        </div>
+                        
+                        <div class="p-3 bg-yellow-50 rounded-lg">
+                            <div class="font-medium text-yellow-800">Dependent Nodes (${dependentNodes.length})</div>
+                            ${dependentNodes.length > 0 ? dependentNodes.map(n => `<div class="text-sm text-yellow-600 ml-2">• ${n.name}</div>`).join('') : '<div class="text-sm text-gray-500 ml-2">None</div>'}
+                        </div>
+                        
+                        <div class="p-3 bg-purple-50 rounded-lg">
+                            <div class="font-medium text-purple-800">End Nodes (${endNodes.length})</div>
+                            ${endNodes.length > 0 ? endNodes.map(n => `<div class="text-sm text-purple-600 ml-2">• ${n.name}</div>`).join('') : '<div class="text-sm text-gray-500 ml-2">None</div>'}
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Build edge analysis
+            const edgeAnalysis = document.getElementById('edgeAnalysis');
+            edgeAnalysis.innerHTML = `
+                <div class="space-y-3">
+                    <div class="text-sm text-gray-600">
+                        <strong>Edge Types:</strong>
+                    </div>
+                    <div class="space-y-2">
+                        <div class="flex justify-between text-sm">
+                            <span>Always Edges:</span>
+                            <span class="font-medium">${edges.filter(e => e.condition?.type === 'always').length}</span>
+                        </div>
+                        <div class="flex justify-between text-sm">
+                            <span>Conditional Edges:</span>
+                            <span class="font-medium">${edges.filter(e => e.condition?.type === 'field_value').length}</span>
+                        </div>
+                        <div class="flex justify-between text-sm">
+                            <span>Completion Edges:</span>
+                            <span class="font-medium">${edges.filter(e => e.condition?.type === 'completion_check').length}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Add clickable nodes
+            const nodeDetails = document.getElementById('nodeDetails');
+            nodeDetails.innerHTML = `
+                <div class="space-y-2">
+                    <div class="text-sm text-gray-600 mb-3">Click a node to view details:</div>
+                    ${nodes.map(n => `
+                        <div class="p-2 border rounded cursor-pointer hover:bg-gray-50" onclick="showNodeDetails('${n.id}')">
+                            <div class="font-medium text-sm">${n.name}</div>
+                            <div class="text-xs text-gray-500">${n.type} | In: ${n.incoming_edges?.length || 0} | Out: ${n.outgoing_edges?.length || 0}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+            
+            log(`✅ Graph analysis complete: ${nodes.length} nodes, ${edges.length} edges`);
+        }
+
+        function showNodeDetails(nodeId) {
+            if (!currentGraph) return;
+            
+            // Handle different graph data structures
+            let nodes = [];
+            if (currentGraph.nodes) {
+                if (typeof currentGraph.nodes === 'object' && !Array.isArray(currentGraph.nodes)) {
+                    nodes = Object.values(currentGraph.nodes);
+                } else if (Array.isArray(currentGraph.nodes)) {
+                    nodes = currentGraph.nodes;
+                }
+            }
+            
+            const node = nodes.find(n => n.id === nodeId);
+            if (!node) {
+                log(`❌ Node not found: ${nodeId}`);
+                return;
+            }
+            
+            const nodeDetails = document.getElementById('nodeDetails');
+            nodeDetails.innerHTML = `
+                <div class="space-y-4">
+                    <div>
+                        <h3 class="font-medium text-lg">${node.name}</h3>
+                        <p class="text-sm text-gray-600">${node.description}</p>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                            <div class="font-medium">Type:</div>
+                            <div class="text-gray-600">${node.type}</div>
+                        </div>
+                        <div>
+                            <div class="font-medium">Independent:</div>
+                            <div class="text-gray-600">${node.is_independent ? 'Yes' : 'No'}</div>
+                        </div>
+                        <div>
+                            <div class="font-medium">Dependent:</div>
+                            <div class="text-gray-600">${node.is_dependent ? 'Yes' : 'No'}</div>
+                        </div>
+                        <div>
+                            <div class="font-medium">Fields:</div>
+                            <div class="text-gray-600">${node.fields?.length || 0}</div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <div class="font-medium text-sm">Incoming Edges (${node.incoming_edges?.length || 0}):</div>
+                        <div class="text-xs text-gray-600">
+                            ${node.incoming_edges?.length > 0 ? node.incoming_edges.map(id => `• ${id.substring(0, 8)}...`).join('<br>') : 'None'}
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <div class="font-medium text-sm">Outgoing Edges (${node.outgoing_edges?.length || 0}):</div>
+                        <div class="text-xs text-gray-600">
+                            ${node.outgoing_edges?.length > 0 ? node.outgoing_edges.map(id => `• ${id.substring(0, 8)}...`).join('<br>') : 'None'}
+                        </div>
+                    </div>
+                    
+                    ${node.dependencies?.length > 0 ? `
+                        <div>
+                            <div class="font-medium text-sm">Dependencies:</div>
+                            <div class="text-xs text-gray-600">
+                                ${node.dependencies.map(dep => `• ${dep.field_id} ${dep.operator} ${dep.value} (${dep.condition})`).join('<br>')}
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+            
+            log(`📋 Showing details for node: ${node.name}`);
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            log('🚀 Edge Visualization Test loaded');
+            loadGraphs();
+        });
+    </script>
+</body>
+</html>

@@ -110,6 +110,22 @@ func seedDemoDataIfNeeded(service *onboarding.Service) {
 			log.Printf("Created production onboarding graph with ID: %s", productionGraph.ID)
 		}
 
+		// Create dynamic production onboarding graph
+		dynamicProductionGraph := examples.CreateDynamicProductionOnboardingGraph()
+		if err := service.CreateGraph(ctx, dynamicProductionGraph); err != nil {
+			log.Printf("Failed to create dynamic production graph: %v", err)
+		} else {
+			log.Printf("Created dynamic production onboarding graph with ID: %s", dynamicProductionGraph.ID)
+		}
+
+		// Create enhanced dynamic production onboarding graph
+		enhancedDynamicGraph := examples.CreateEnhancedDynamicProductionOnboardingGraph()
+		if err := service.CreateGraph(ctx, enhancedDynamicGraph); err != nil {
+			log.Printf("Failed to create enhanced dynamic production graph: %v", err)
+		} else {
+			log.Printf("Created enhanced dynamic production onboarding graph with ID: %s", enhancedDynamicGraph.ID)
+		}
+
 		log.Println("Demo data seeding completed!")
 	} else {
 		log.Printf("Found %d existing graphs, skipping seeding", len(graphs))

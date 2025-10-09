@@ -19,16 +19,71 @@ const (
 
 // Node represents a step in the onboarding process
 type Node struct {
-	ID          string                 `json:"id"`
-	Type        NodeType               `json:"type"`
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	Fields      []Field                `json:"fields"`
-	Validation  ValidationRules        `json:"validation"`
-	Metadata    map[string]interface{} `json:"metadata"`
-	CreatedAt   time.Time              `json:"created_at"`
-	UpdatedAt   time.Time              `json:"updated_at"`
+	ID          string          `json:"id"`
+	Type        NodeType        `json:"type"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Fields      []Field         `json:"fields"`
+	Validation  ValidationRules `json:"validation"`
+	// Edge tracking for navigation
+	IncomingEdges []string `json:"incoming_edges,omitempty"` // Edge IDs that lead to this node
+	OutgoingEdges []string `json:"outgoing_edges,omitempty"` // Edge IDs that lead from this node
+	// Navigation metadata
+	IsIndependent bool                   `json:"is_independent,omitempty"` // Can be accessed from start node
+	IsDependent   bool                   `json:"is_dependent,omitempty"`   // Requires dependencies to be satisfied
+	Dependencies  []NodeDependency       `json:"dependencies,omitempty"`   // What this node depends on
+	Metadata      map[string]interface{} `json:"metadata"`
+	CreatedAt     time.Time              `json:"created_at"`
+	UpdatedAt     time.Time              `json:"updated_at"`
 }
+
+// NodeDependency represents what a node depends on
+type NodeDependency struct {
+	FieldID      string      `json:"field_id"`                // Field that must be filled
+	Operator     string      `json:"operator"`                // Comparison operator (eq, ne, in, etc.)
+	Value        interface{} `json:"value"`                   // Value to compare against
+	Condition    string      `json:"condition"`               // Human readable condition
+	BusinessType string      `json:"business_type,omitempty"` // Specific business type requirement
+}
+
+// CrossNodeValidationRule represents validation rules that span across multiple nodes
+type CrossNodeValidationRule struct {
+	ID           string                    `json:"id"`                      // Unique identifier for the rule
+	Name         string                    `json:"name"`                    // Human readable name
+	Description  string                    `json:"description"`             // Detailed description
+	Fields       []CrossNodeFieldReference `json:"fields"`                  // Fields from different nodes to validate
+	Condition    CrossNodeCondition        `json:"condition"`               // Validation condition
+	ErrorMsg     string                    `json:"error_msg"`               // Error message when validation fails
+	BusinessType string                    `json:"business_type,omitempty"` // Specific business type (empty for all)
+	Severity     ValidationSeverity        `json:"severity"`                // Error, Warning, or Info
+	Enabled      bool                      `json:"enabled"`                 // Whether this rule is active
+}
+
+// CrossNodeFieldReference represents a field reference from a specific node
+type CrossNodeFieldReference struct {
+	NodeID  string `json:"node_id"`  // ID of the node containing the field
+	FieldID string `json:"field_id"` // ID of the field within the node
+	Alias   string `json:"alias"`    // Optional alias for the field in the condition
+}
+
+// CrossNodeCondition represents the validation logic for cross-node validation
+type CrossNodeCondition struct {
+	Type     string                 `json:"type"`               // Condition type: "field_match", "field_contains", "custom_logic"
+	Operator string                 `json:"operator"`           // Comparison operator: "eq", "ne", "contains", "matches", "custom"
+	Fields   []string               `json:"fields"`             // Field aliases to compare (from CrossNodeFieldReference.Alias)
+	Value    interface{}            `json:"value,omitempty"`    // Static value to compare against (if applicable)
+	Logic    string                 `json:"logic,omitempty"`    // Custom validation logic (for complex cases)
+	Metadata map[string]interface{} `json:"metadata,omitempty"` // Additional metadata for the condition
+}
+
+// ValidationSeverity represents the severity level of a validation rule
+type ValidationSeverity string
+
+const (
+	ValidationSeverityError   ValidationSeverity = "error"   // Blocks completion
+	ValidationSeverityWarning ValidationSeverity = "warning" // Shows warning but allows continuation
+	ValidationSeverityInfo    ValidationSeverity = "info"    // Informational only
+)
 
 // Field represents an input field in a node
 type Field struct {
@@ -102,16 +157,17 @@ type EdgeCondition struct {
 
 // Graph represents the complete onboarding flow
 type Graph struct {
-	ID          string                 `json:"id"`
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	Version     string                 `json:"version"`
-	Nodes       map[string]*Node       `json:"nodes"`
-	Edges       map[string]*Edge       `json:"edges"`
-	StartNodeID string                 `json:"start_node_id"`
-	Metadata    map[string]interface{} `json:"metadata"`
-	CreatedAt   time.Time              `json:"created_at"`
-	UpdatedAt   time.Time              `json:"updated_at"`
+	ID                  string                    `json:"id"`
+	Name                string                    `json:"name"`
+	Description         string                    `json:"description"`
+	Version             string                    `json:"version"`
+	Nodes               map[string]*Node          `json:"nodes"`
+	Edges               map[string]*Edge          `json:"edges"`
+	StartNodeID         string                    `json:"start_node_id"`
+	CrossNodeValidation []CrossNodeValidationRule `json:"cross_node_validation,omitempty"` // Cross-node validation rules
+	Metadata            map[string]interface{}    `json:"metadata"`
+	CreatedAt           time.Time                 `json:"created_at"`
+	UpdatedAt           time.Time                 `json:"updated_at"`
 }
 
 // Session represents an active onboarding session
