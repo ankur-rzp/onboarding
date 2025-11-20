@@ -19,7 +19,7 @@ Preview the interactive demos directly in your browser:
 
 ### Main Demos
 - **[Interactive Fintech Onboarding Demo](index.html)** - Full interactive onboarding flow visualization
-  - 🔗 [Live Preview](https://htmlpreview.github.io/?https://raw.githubusercontent.com/ankur-rzp/onboarding/observer-dynamic/index.html) - View with all dependencies loaded
+  - 🔗 [Live Preview](https://htmlpreview.github.io/?https://raw.githubusercontent.com/ankur-rzp/onboarding/main/index.html) - View with all dependencies loaded
 - **[Dynamic Onboarding System Demo](dynamic-onboarding-demo.html)** - CSV-based business type requirements with observer pattern
 
 ### Test Interfaces
