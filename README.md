@@ -13,6 +13,21 @@ A flexible, graph-based onboarding system built in Go that provides dynamic, fau
 - **Flexible Paths**: Users can go back and change data, with paths adapting accordingly
 - **Real-time Validation**: Immediate feedback on data submission
 
+## 🎮 Live Demos
+
+Preview the interactive demos directly in your browser:
+
+### Main Demos
+- **[Interactive Fintech Onboarding Demo](https://htmlpreview.github.io/?https://github.com/ankur-rzp/onboarding/blob/observer-dynamic/demo.html)** - Full interactive onboarding flow visualization
+- **[Dynamic Onboarding System Demo](https://htmlpreview.github.io/?https://github.com/ankur-rzp/onboarding/blob/observer-dynamic/dynamic-onboarding-demo.html)** - CSV-based business type requirements with observer pattern
+
+### Test Interfaces
+- **[Dynamic Navigation Test](https://htmlpreview.github.io/?https://github.com/ankur-rzp/onboarding/blob/observer-dynamic/test-dynamic-navigation.html)** - Test dynamic node navigation and status updates
+- **[Edge Visualization](https://htmlpreview.github.io/?https://github.com/ankur-rzp/onboarding/blob/observer-dynamic/test-edge-visualization.html)** - Visualize graph structure and edge relationships
+- **[Cross-Node Validation Test](https://htmlpreview.github.io/?https://github.com/ankur-rzp/onboarding/blob/observer-dynamic/test-cross-node-validation.html)** - Test cross-node validation rules
+
+> **Note**: These demos require the backend server to be running. See [Quick Start](#quick-start) to start the server locally, or use the API endpoints directly.
+
 ## Architecture
 
 ```
