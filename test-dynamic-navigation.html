@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Navigation Test</title>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-8">
+    <div class="max-w-6xl mx-auto">
+        <h1 class="text-3xl font-bold mb-8">Dynamic Navigation Test</h1>
+        
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Left Panel: Graph Visualization -->
+            <div>
+                <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+                    <h2 class="text-xl font-bold mb-4">Graph Structure</h2>
+                    <div class="text-sm text-gray-600 mb-4">
+                        <p><strong>Independent Nodes:</strong> Can be accessed from start node</p>
+                        <p><strong>Dependent Nodes:</strong> Only accessible when dependencies are satisfied</p>
+                    </div>
+                    
+                    <div class="space-y-2">
+                        <div class="flex items-center space-x-2">
+                            <div class="w-3 h-3 bg-green-500 rounded-full"></div>
+                            <span class="text-sm">Start Node (Business Type Selection)</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div class="w-3 h-3 bg-blue-500 rounded-full"></div>
+                            <span class="text-sm">Independent Nodes (PAN, Payment Channel, MCC & Policy, Business Info)</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div class="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                            <span class="text-sm">Dependent Nodes (Business Document, BMC Document, Authorised Signatory, Bank Account)</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div class="w-3 h-3 bg-purple-500 rounded-full"></div>
+                            <span class="text-sm">Completion Node</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <h2 class="text-xl font-bold mb-4">Available Graphs</h2>
+                    <div id="graphsList" class="space-y-2">
+                        <div class="text-gray-500">Loading graphs...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel: Session Management -->
+            <div>
+                <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+                    <h2 class="text-xl font-bold mb-4">Session Info</h2>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Session ID</label>
+                            <div class="text-sm text-gray-600 font-mono" id="sessionId">Not started</div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Current Node</label>
+                            <div class="text-sm text-gray-600" id="currentNode">Not loaded</div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Graph</label>
+                            <div class="text-sm text-gray-600" id="graphInfo">Not selected</div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Eligible Nodes</label>
+                            <div class="text-sm text-gray-600" id="eligibleNodes">0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+                    <h2 class="text-xl font-bold mb-4">Actions</h2>
+                    <div class="space-y-2">
+                        <button onclick="startSession()" class="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700">
+                            Start Session
+                        </button>
+                        <button onclick="loadCurrentNode()" class="w-full bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700">
+                            Load Current Node
+                        </button>
+                        <button onclick="fetchEligibleNodes()" class="w-full bg-purple-600 text-white py-2 px-4 rounded hover:bg-purple-700">
+                            Fetch Eligible Nodes
+                        </button>
+                        <button onclick="submitCurrentNode()" class="w-full bg-orange-600 text-white py-2 px-4 rounded hover:bg-orange-700">
+                            Submit Current Node
+                        </button>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <h2 class="text-xl font-bold mb-4">Current Form</h2>
+                    <div id="currentForm">
+                        <div class="text-gray-500 text-center py-8">
+                            Start a session to begin
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Panel: Debug Log -->
+        <div class="mt-8">
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-xl font-bold mb-4">Debug Log</h2>
+                <div class="bg-gray-50 p-4 rounded h-64 overflow-y-auto">
+                    <div id="debugLog" class="text-sm text-gray-700 space-y-1">
+                        <div class="text-gray-500">No logs yet</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080/api/v1';
+        let currentSession = null;
+        let currentGraph = null;
+        let currentNode = null;
+        let eligibleNodes = [];
+
+        function log(message) {
+            const logContainer = document.getElementById('debugLog');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `<span class="text-gray-500">[${timestamp}]</span> ${message}`;
+            
+            // Remove "No logs yet" message if it exists
+            const noLogs = logContainer.querySelector('.text-gray-500');
+            if (noLogs && noLogs.textContent === 'No logs yet') {
+                noLogs.remove();
+            }
+            
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        async function loadGraphs() {
+            try {
+                log('📊 Loading available graphs...');
+                const response = await axios.get(`${API_BASE}/graphs`);
+                const graphs = response.data || [];
+                
+                const graphsList = document.getElementById('graphsList');
+                graphsList.innerHTML = '';
+                
+                graphs.forEach(graph => {
+                    const graphDiv = document.createElement('div');
+                    graphDiv.className = 'p-3 border rounded-lg cursor-pointer hover:bg-gray-50';
+                    graphDiv.innerHTML = `
+                        <div class="font-medium">${graph.name}</div>
+                        <div class="text-sm text-gray-600">${graph.description}</div>
+                        <div class="text-xs text-gray-500 mt-1">ID: ${graph.id.substring(0, 8)}...</div>
+                    `;
+                    graphDiv.onclick = () => selectGraph(graph);
+                    graphsList.appendChild(graphDiv);
+                });
+                
+                log(`✅ Loaded ${graphs.length} graphs`);
+            } catch (error) {
+                log(`❌ Error loading graphs: ${error.message}`);
+            }
+        }
+
+        function selectGraph(graph) {
+            currentGraph = graph;
+            document.getElementById('graphInfo').textContent = `${graph.name} (${graph.id.substring(0, 8)}...)`;
+            log(`📊 Selected graph: ${graph.name}`);
+        }
+
+        async function startSession() {
+            if (!currentGraph) {
+                log('❌ Please select a graph first');
+                return;
+            }
+
+            try {
+                log('🆕 Starting session...');
+                const response = await axios.post(`${API_BASE}/sessions`, {
+                    graph_id: currentGraph.id,
+                    user_id: 'test-user-' + Date.now()
+                });
+                
+                currentSession = response.data;
+                document.getElementById('sessionId').textContent = currentSession.id.substring(0, 8) + '...';
+                log(`✅ Session started: ${currentSession.id.substring(0, 8)}...`);
+                
+                await loadCurrentNode();
+                await fetchEligibleNodes();
+                
+            } catch (error) {
+                log(`❌ Error starting session: ${error.message}`);
+            }
+        }
+
+        async function loadCurrentNode() {
+            if (!currentSession) {
+                log('❌ No session available');
+                return;
+            }
+
+            try {
+                log('📍 Loading current node...');
+                const response = await axios.get(`${API_BASE}/sessions/${currentSession.id}/current`);
+                currentNode = response.data;
+                
+                document.getElementById('currentNode').textContent = currentNode.name;
+                log(`✅ Current node: ${currentNode.name}`);
+                
+                generateForm();
+                
+            } catch (error) {
+                log(`❌ Error loading current node: ${error.message}`);
+            }
+        }
+
+        async function fetchEligibleNodes() {
+            if (!currentSession) {
+                log('❌ No session available');
+                return;
+            }
+
+            try {
+                log('🔍 Fetching eligible nodes...');
+                const response = await axios.get(`${API_BASE}/sessions/${currentSession.id}/eligible-nodes`);
+                eligibleNodes = response.data.eligible_nodes || [];
+                
+                document.getElementById('eligibleNodes').textContent = eligibleNodes.length;
+                log(`✅ Found ${eligibleNodes.length} eligible nodes: ${eligibleNodes.map(id => id.substring(0, 8)).join(', ')}`);
+                
+            } catch (error) {
+                log(`❌ Error fetching eligible nodes: ${error.message}`);
+            }
+        }
+
+        function generateForm() {
+            if (!currentNode) return;
+            
+            const formContainer = document.getElementById('currentForm');
+            
+            if (currentNode.name === 'Business Type Selection') {
+                formContainer.innerHTML = `
+                    <div class="space-y-4">
+                        <h3 class="font-medium text-gray-800">${currentNode.name}</h3>
+                        <p class="text-sm text-gray-600">${currentNode.description}</p>
+                        
+                        <div class="space-y-3">
+                            <label class="block text-sm font-medium text-gray-700">Business Type</label>
+                            <select id="businessTypeSelect" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                <option value="">Select business type</option>
+                                <option value="individual">Individual</option>
+                                <option value="proprietorship">Proprietorship</option>
+                                <option value="private_limited">Private Limited</option>
+                                <option value="public_limited">Public Limited</option>
+                                <option value="partnership">Partnership</option>
+                                <option value="llp">LLP</option>
+                                <option value="trust">Trust</option>
+                                <option value="society">Society</option>
+                                <option value="huf">HUF</option>
+                            </select>
+                        </div>
+                    </div>
+                `;
+            } else if (currentNode.name === 'PAN Number') {
+                formContainer.innerHTML = `
+                    <div class="space-y-4">
+                        <h3 class="font-medium text-gray-800">${currentNode.name}</h3>
+                        <p class="text-sm text-gray-600">${currentNode.description}</p>
+                        
+                        <div class="space-y-3">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">PAN Number</label>
+                                <input type="text" id="panNumber" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="ABCDE1234F">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">PAN Document</label>
+                                <input type="file" id="panDocument" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else if (currentNode.name === 'Payment Channel') {
+                formContainer.innerHTML = `
+                    <div class="space-y-4">
+                        <h3 class="font-medium text-gray-800">${currentNode.name}</h3>
+                        <p class="text-sm text-gray-600">${currentNode.description}</p>
+                        
+                        <div class="space-y-3">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Payment Channel</label>
+                                <select id="paymentChannel" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="">Select payment channel</option>
+                                    <option value="website">Website</option>
+                                    <option value="app">App</option>
+                                    <option value="no_code">No Code</option>
+                                </select>
+                            </div>
+                            <div id="websiteUrlField" class="hidden">
+                                <label class="block text-sm font-medium text-gray-700">Website URL</label>
+                                <input type="text" id="websiteUrl" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="https://example.com">
+                            </div>
+                            <div id="appUrlFields" class="hidden space-y-3">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">Android URL</label>
+                                    <input type="text" id="androidUrl" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="https://play.google.com/store">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">iOS URL</label>
+                                    <input type="text" id="iosUrl" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="https://apps.apple.com/app">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // Add event listener for payment channel change
+                setTimeout(() => {
+                    const paymentChannelSelect = document.getElementById('paymentChannel');
+                    if (paymentChannelSelect) {
+                        paymentChannelSelect.addEventListener('change', function() {
+                            const websiteField = document.getElementById('websiteUrlField');
+                            const appFields = document.getElementById('appUrlFields');
+                            
+                            if (this.value === 'website') {
+                                websiteField.classList.remove('hidden');
+                                appFields.classList.add('hidden');
+                            } else if (this.value === 'app') {
+                                websiteField.classList.add('hidden');
+                                appFields.classList.remove('hidden');
+                            } else {
+                                websiteField.classList.add('hidden');
+                                appFields.classList.add('hidden');
+                            }
+                        });
+                    }
+                }, 100);
+            } else {
+                formContainer.innerHTML = `
+                    <div class="space-y-4">
+                        <h3 class="font-medium text-gray-800">${currentNode.name}</h3>
+                        <p class="text-sm text-gray-600">${currentNode.description}</p>
+                        <div class="text-center py-8 text-gray-500">
+                            Form for ${currentNode.name} would be rendered here
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        async function submitCurrentNode() {
+            if (!currentSession || !currentNode) {
+                log('❌ No session or current node available');
+                return;
+            }
+
+            try {
+                // Collect form data based on current node
+                const data = {};
+                
+                if (currentNode.name === 'Business Type Selection') {
+                    const businessType = document.getElementById('businessTypeSelect')?.value;
+                    if (!businessType) {
+                        log('❌ Please select a business type');
+                        return;
+                    }
+                    data.business_type = businessType;
+                } else if (currentNode.name === 'PAN Number') {
+                    const panNumber = document.getElementById('panNumber')?.value;
+                    const panDocument = document.getElementById('panDocument')?.files[0];
+                    
+                    if (!panNumber) {
+                        log('❌ Please enter PAN number');
+                        return;
+                    }
+                    if (!panDocument) {
+                        log('❌ Please upload PAN document');
+                        return;
+                    }
+                    
+                    data.pan_number = panNumber;
+                    data.pan_document = panDocument.name;
+                } else if (currentNode.name === 'Payment Channel') {
+                    const paymentChannel = document.getElementById('paymentChannel')?.value;
+                    if (!paymentChannel) {
+                        log('❌ Please select payment channel');
+                        return;
+                    }
+                    
+                    data.payment_channel = paymentChannel;
+                    
+                    if (paymentChannel === 'website') {
+                        const websiteUrl = document.getElementById('websiteUrl')?.value;
+                        if (!websiteUrl) {
+                            log('❌ Please enter website URL');
+                            return;
+                        }
+                        data.website_url = websiteUrl;
+                    } else if (paymentChannel === 'app') {
+                        const androidUrl = document.getElementById('androidUrl')?.value;
+                        const iosUrl = document.getElementById('iosUrl')?.value;
+                        
+                        if (!androidUrl || !iosUrl) {
+                            log('❌ Please enter both Android and iOS URLs');
+                            return;
+                        }
+                        data.android_url = androidUrl;
+                        data.ios_url = iosUrl;
+                    }
+                } else {
+                    log(`❌ No form handler for node: ${currentNode.name}`);
+                    return;
+                }
+                
+                log(`📤 Submitting data for ${currentNode.name}:`, data);
+                const response = await axios.post(`${API_BASE}/sessions/${currentSession.id}/submit`, data);
+                
+                log(`✅ ${currentNode.name} submitted successfully`);
+                log(`📍 Next node ID: ${response.data.next_node_id}`);
+                
+                // Update session data
+                if (!currentSession.data) {
+                    currentSession.data = {};
+                }
+                Object.assign(currentSession.data, data);
+                
+                // Reload current node and eligible nodes
+                await loadCurrentNode();
+                await fetchEligibleNodes();
+                
+            } catch (error) {
+                log(`❌ Error submitting ${currentNode.name}: ${error.message}`);
+                if (error.response && error.response.data) {
+                    log(`📝 Error details: ${JSON.stringify(error.response.data)}`);
+                }
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            log('🚀 Dynamic Navigation Test loaded');
+            loadGraphs();
+        });
+    </script>
+</body>
+</html>

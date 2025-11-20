@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cross-Node Validation Test</title>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen p-8">
+    <div class="max-w-7xl mx-auto">
+        <h1 class="text-3xl font-bold mb-8">Cross-Node Validation Test</h1>
+        
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Left Panel: Session Management -->
+            <div>
+                <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+                    <h2 class="text-xl font-bold mb-4">Session Management</h2>
+                    <div class="space-y-2">
+                        <button onclick="startSession()" class="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700">
+                            Start Session
+                        </button>
+                        <button onclick="loadCurrentNode()" class="w-full bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700">
+                            Load Current Node
+                        </button>
+                        <button onclick="runCrossNodeValidation()" class="w-full bg-purple-600 text-white py-2 px-4 rounded hover:bg-purple-700">
+                            Run Cross-Node Validation
+                        </button>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <h2 class="text-xl font-bold mb-4">Session Info</h2>
+                    <div class="space-y-2 text-sm">
+                        <div>
+                            <span class="font-medium">Session ID:</span>
+                            <div class="text-gray-600 font-mono" id="sessionId">Not started</div>
+                        </div>
+                        <div>
+                            <span class="font-medium">Current Node:</span>
+                            <div class="text-gray-600" id="currentNode">Not loaded</div>
+                        </div>
+                        <div>
+                            <span class="font-medium">Business Type:</span>
+                            <div class="text-gray-600" id="businessType">Not selected</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Center Panel: Form and Data Entry -->
+            <div>
+                <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+                    <h2 class="text-xl font-bold mb-4">Current Form</h2>
+                    <div id="currentForm">
+                        <div class="text-gray-500 text-center py-8">
+                            Start a session to begin
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <h2 class="text-xl font-bold mb-4">Session Data</h2>
+                    <div id="sessionData" class="text-sm">
+                        <div class="text-gray-500">No data yet</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel: Validation Results -->
+            <div>
+                <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+                    <h2 class="text-xl font-bold mb-4">Cross-Node Validation Rules</h2>
+                    <div id="validationRules" class="space-y-3">
+                        <div class="text-gray-500 text-center py-8">
+                            Start session to view rules
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <h2 class="text-xl font-bold mb-4">Validation Results</h2>
+                    <div id="validationResults" class="space-y-3">
+                        <div class="text-gray-500 text-center py-8">
+                            Run validation to see results
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Panel: Debug Log -->
+        <div class="mt-8">
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-xl font-bold mb-4">Debug Log</h2>
+                <div class="bg-gray-50 p-4 rounded h-64 overflow-y-auto">
+                    <div id="debugLog" class="text-sm text-gray-700 space-y-1">
+                        <div class="text-gray-500">No logs yet</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080/api/v1';
+        let currentSession = null;
+        let currentGraph = null;
+        let currentNode = null;
+        let sessionData = {};
+
+        function log(message) {
+            const logContainer = document.getElementById('debugLog');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `<span class="text-gray-500">[${timestamp}]</span> ${message}`;
+            
+            // Remove "No logs yet" message if it exists
+            const noLogs = logContainer.querySelector('.text-gray-500');
+            if (noLogs && noLogs.textContent === 'No logs yet') {
+                noLogs.remove();
+            }
+            
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        async function startSession() {
+            try {
+                log('🆕 Starting session...');
+                
+                // Get the enhanced dynamic graph
+                const graphsResponse = await axios.get(`${API_BASE}/graphs`);
+                const graphs = graphsResponse.data || [];
+                const enhancedGraph = graphs.find(g => g.name === 'Enhanced Dynamic Production Onboarding');
+                
+                if (!enhancedGraph) {
+                    log('❌ Enhanced Dynamic Production Onboarding graph not found');
+                    return;
+                }
+                
+                currentGraph = enhancedGraph;
+                
+                const response = await axios.post(`${API_BASE}/sessions`, {
+                    graph_id: enhancedGraph.id,
+                    user_id: 'cross-node-test-' + Date.now()
+                });
+                
+                currentSession = response.data;
+                document.getElementById('sessionId').textContent = currentSession.id.substring(0, 8) + '...';
+                log(`✅ Session started: ${currentSession.id.substring(0, 8)}...`);
+                
+                await loadCurrentNode();
+                await loadValidationRules();
+                
+            } catch (error) {
+                log(`❌ Error starting session: ${error.message}`);
+            }
+        }
+
+        async function loadCurrentNode() {
+            if (!currentSession) {
+                log('❌ No session available');
+                return;
+            }
+
+            try {
+                log('📍 Loading current node...');
+                const response = await axios.get(`${API_BASE}/sessions/${currentSession.id}/current`);
+                currentNode = response.data;
+                
+                document.getElementById('currentNode').textContent = currentNode.name;
+                log(`✅ Current node: ${currentNode.name}`);
+                
+                generateForm();
+                updateSessionData();
+                
+            } catch (error) {
+                log(`❌ Error loading current node: ${error.message}`);
+            }
+        }
+
+        async function loadValidationRules() {
+            if (!currentGraph) {
+                log('❌ No graph available');
+                return;
+            }
+
+            try {
+                const validationRules = currentGraph.cross_node_validation || [];
+                const rulesContainer = document.getElementById('validationRules');
+                
+                if (validationRules.length === 0) {
+                    rulesContainer.innerHTML = '<div class="text-gray-500 text-center py-4">No cross-node validation rules found</div>';
+                    return;
+                }
+                
+                rulesContainer.innerHTML = validationRules.map(rule => `
+                    <div class="p-3 border rounded-lg">
+                        <div class="font-medium text-sm">${rule.name}</div>
+                        <div class="text-xs text-gray-600 mt-1">${rule.description}</div>
+                        <div class="flex items-center mt-2 space-x-2">
+                            <span class="text-xs px-2 py-1 rounded ${getSeverityColor(rule.severity)}">${rule.severity}</span>
+                            <span class="text-xs text-gray-500">${rule.business_type || 'All types'}</span>
+                        </div>
+                    </div>
+                `).join('');
+                
+                log(`✅ Loaded ${validationRules.length} cross-node validation rules`);
+                
+            } catch (error) {
+                log(`❌ Error loading validation rules: ${error.message}`);
+            }
+        }
+
+        function getSeverityColor(severity) {
+            switch (severity) {
+                case 'error': return 'bg-red-100 text-red-800';
+                case 'warning': return 'bg-yellow-100 text-yellow-800';
+                case 'info': return 'bg-blue-100 text-blue-800';
+                default: return 'bg-gray-100 text-gray-800';
+            }
+        }
+
+        function generateForm() {
+            if (!currentNode) return;
+            
+            const formContainer = document.getElementById('currentForm');
+            
+            if (currentNode.name === 'Business Type Selection') {
+                formContainer.innerHTML = `
+                    <div class="space-y-4">
+                        <h3 class="font-medium text-gray-800">${currentNode.name}</h3>
+                        <p class="text-sm text-gray-600">${currentNode.description}</p>
+                        
+                        <div class="space-y-3">
+                            <label class="block text-sm font-medium text-gray-700">Business Type</label>
+                            <select id="businessTypeSelect" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                <option value="">Select business type</option>
+                                <option value="individual">Individual</option>
+                                <option value="proprietorship">Proprietorship</option>
+                                <option value="private_limited">Private Limited</option>
+                                <option value="public_limited">Public Limited</option>
+                                <option value="partnership">Partnership</option>
+                                <option value="llp">LLP</option>
+                                <option value="trust">Trust</option>
+                                <option value="society">Society</option>
+                                <option value="huf">HUF</option>
+                            </select>
+                        </div>
+                        
+                        <button onclick="submitCurrentNode()" class="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700">
+                            Submit Business Type
+                        </button>
+                    </div>
+                `;
+            } else if (currentNode.name === 'Business Information') {
+                formContainer.innerHTML = `
+                    <div class="space-y-4">
+                        <h3 class="font-medium text-gray-800">${currentNode.name}</h3>
+                        <p class="text-sm text-gray-600">${currentNode.description}</p>
+                        
+                        <div class="space-y-3">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Business Name</label>
+                                <input type="text" id="businessName" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Enter business name">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Brand Name</label>
+                                <input type="text" id="brandName" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Enter brand name">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Business City</label>
+                                <input type="text" id="businessCity" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Enter city">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Business State</label>
+                                <select id="businessState" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="">Select state</option>
+                                    <option value="maharashtra">Maharashtra</option>
+                                    <option value="karnataka">Karnataka</option>
+                                    <option value="tamil_nadu">Tamil Nadu</option>
+                                    <option value="delhi">Delhi</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Business Pincode</label>
+                                <input type="text" id="businessPincode" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Enter pincode">
+                            </div>
+                        </div>
+                        
+                        <button onclick="submitCurrentNode()" class="w-full bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700">
+                            Submit Business Information
+                        </button>
+                    </div>
+                `;
+            } else if (currentNode.name === 'Bank Account Details') {
+                formContainer.innerHTML = `
+                    <div class="space-y-4">
+                        <h3 class="font-medium text-gray-800">${currentNode.name}</h3>
+                        <p class="text-sm text-gray-600">${currentNode.description}</p>
+                        
+                        <div class="space-y-3">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Bank Name</label>
+                                <input type="text" id="bankName" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Enter bank name">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Account Number</label>
+                                <input type="text" id="bankAccountNumber" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Enter account number">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">IFSC Code</label>
+                                <input type="text" id="ifscCode" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="Enter IFSC code">
+                            </div>
+                        </div>
+                        
+                        <button onclick="submitCurrentNode()" class="w-full bg-purple-600 text-white py-2 px-4 rounded hover:bg-purple-700">
+                            Submit Bank Details
+                        </button>
+                    </div>
+                `;
+            } else {
+                formContainer.innerHTML = `
+                    <div class="space-y-4">
+                        <h3 class="font-medium text-gray-800">${currentNode.name}</h3>
+                        <p class="text-sm text-gray-600">${currentNode.description}</p>
+                        <div class="text-center py-8 text-gray-500">
+                            Form for ${currentNode.name} would be rendered here
+                        </div>
+                        <button onclick="submitCurrentNode()" class="w-full bg-gray-600 text-white py-2 px-4 rounded hover:bg-gray-700">
+                            Submit ${currentNode.name}
+                        </button>
+                    </div>
+                `;
+            }
+        }
+
+        async function submitCurrentNode() {
+            if (!currentSession || !currentNode) {
+                log('❌ No session or current node available');
+                return;
+            }
+
+            try {
+                // Collect form data based on current node
+                const data = {};
+                
+                if (currentNode.name === 'Business Type Selection') {
+                    const businessType = document.getElementById('businessTypeSelect')?.value;
+                    if (!businessType) {
+                        log('❌ Please select a business type');
+                        return;
+                    }
+                    data.business_type = businessType;
+                    document.getElementById('businessType').textContent = businessType;
+                } else if (currentNode.name === 'Business Information') {
+                    const businessName = document.getElementById('businessName')?.value;
+                    const brandName = document.getElementById('brandName')?.value;
+                    const businessCity = document.getElementById('businessCity')?.value;
+                    const businessState = document.getElementById('businessState')?.value;
+                    const businessPincode = document.getElementById('businessPincode')?.value;
+                    
+                    if (!businessName || !brandName || !businessCity || !businessState || !businessPincode) {
+                        log('❌ Please fill all required fields');
+                        return;
+                    }
+                    
+                    data.business_name = businessName;
+                    data.brand_name = brandName;
+                    data.business_city = businessCity;
+                    data.business_state = businessState;
+                    data.business_pincode = businessPincode;
+                } else if (currentNode.name === 'Bank Account Details') {
+                    const bankName = document.getElementById('bankName')?.value;
+                    const bankAccountNumber = document.getElementById('bankAccountNumber')?.value;
+                    const ifscCode = document.getElementById('ifscCode')?.value;
+                    
+                    if (!bankName || !bankAccountNumber || !ifscCode) {
+                        log('❌ Please fill all required fields');
+                        return;
+                    }
+                    
+                    data.bank_name = bankName;
+                    data.bank_account_number = bankAccountNumber;
+                    data.ifsc_code = ifscCode;
+                } else {
+                    log(`❌ No form handler for node: ${currentNode.name}`);
+                    return;
+                }
+                
+                log(`📤 Submitting data for ${currentNode.name}:`, data);
+                const response = await axios.post(`${API_BASE}/sessions/${currentSession.id}/submit`, data);
+                
+                log(`✅ ${currentNode.name} submitted successfully`);
+                
+                // Update session data
+                Object.assign(sessionData, data);
+                updateSessionData();
+                
+                // Load the next node
+                await loadCurrentNode();
+                
+            } catch (error) {
+                log(`❌ Error submitting ${currentNode.name}: ${error.message}`);
+                if (error.response && error.response.data) {
+                    log(`📝 Error details: ${JSON.stringify(error.response.data)}`);
+                }
+            }
+        }
+
+        function updateSessionData() {
+            const sessionDataContainer = document.getElementById('sessionData');
+            if (Object.keys(sessionData).length === 0) {
+                sessionDataContainer.innerHTML = '<div class="text-gray-500">No data yet</div>';
+                return;
+            }
+            
+            sessionDataContainer.innerHTML = Object.entries(sessionData).map(([key, value]) => `
+                <div class="flex justify-between py-1 border-b border-gray-100">
+                    <span class="font-medium">${key}:</span>
+                    <span class="text-gray-600">${value}</span>
+                </div>
+            `).join('');
+        }
+
+        async function runCrossNodeValidation() {
+            if (!currentSession || !currentGraph) {
+                log('❌ No session or graph available');
+                return;
+            }
+
+            try {
+                log('🔍 Running cross-node validation...');
+                
+                // For now, we'll simulate the validation since we don't have the API endpoint yet
+                // In a real implementation, this would call the backend validation engine
+                const validationResults = simulateCrossNodeValidation();
+                
+                displayValidationResults(validationResults);
+                
+                log(`✅ Cross-node validation completed: ${validationResults.length} rules checked`);
+                
+            } catch (error) {
+                log(`❌ Error running cross-node validation: ${error.message}`);
+            }
+        }
+
+        function simulateCrossNodeValidation() {
+            // Simulate validation results based on current session data
+            const results = [];
+            
+            // Business name and bank name consistency
+            if (sessionData.business_name && sessionData.bank_name) {
+                const businessName = sessionData.business_name.toLowerCase();
+                const bankName = sessionData.bank_name.toLowerCase();
+                const matches = bankName.includes(businessName) || businessName.includes(bankName);
+                
+                results.push({
+                    rule_id: 'business_name_bank_name_match',
+                    rule_name: 'Business Name and Bank Name Consistency',
+                    passed: matches,
+                    error_msg: matches ? '' : 'Business name should match or be consistent with the bank name',
+                    severity: 'warning',
+                    fields: ['business_name', 'bank_name']
+                });
+            }
+            
+            // Address completeness
+            const addressFields = ['business_city', 'business_state', 'business_pincode'];
+            const addressComplete = addressFields.every(field => sessionData[field] && sessionData[field].trim() !== '');
+            
+            results.push({
+                rule_id: 'address_completeness',
+                rule_name: 'Address Information Completeness',
+                passed: addressComplete,
+                error_msg: addressComplete ? '' : 'All address fields (city, state, pincode) must be completed',
+                severity: 'error',
+                fields: addressFields
+            });
+            
+            return results;
+        }
+
+        function displayValidationResults(results) {
+            const resultsContainer = document.getElementById('validationResults');
+            
+            if (results.length === 0) {
+                resultsContainer.innerHTML = '<div class="text-gray-500 text-center py-4">No validation results</div>';
+                return;
+            }
+            
+            resultsContainer.innerHTML = results.map(result => `
+                <div class="p-3 border rounded-lg ${result.passed ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}">
+                    <div class="flex items-center justify-between">
+                        <div class="font-medium text-sm">${result.rule_name}</div>
+                        <span class="text-xs px-2 py-1 rounded ${result.passed ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+                            ${result.passed ? 'PASSED' : 'FAILED'}
+                        </span>
+                    </div>
+                    <div class="text-xs text-gray-600 mt-1">${result.rule_id}</div>
+                    ${!result.passed && result.error_msg ? `<div class="text-xs text-red-600 mt-1">${result.error_msg}</div>` : ''}
+                    <div class="text-xs text-gray-500 mt-1">Fields: ${result.fields.join(', ')}</div>
+                </div>
+            `).join('');
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            log('🚀 Cross-Node Validation Test loaded');
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Onboarding System - Demo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <style>
+        .node-status-mandatory { @apply bg-red-100 border-red-300 text-red-800; }
+        .node-status-optional { @apply bg-blue-100 border-blue-300 text-blue-800; }
+        .node-status-dependent { @apply bg-yellow-100 border-yellow-300 text-yellow-800; }
+        .node-status-completed { @apply bg-green-100 border-green-300 text-green-800; }
+        .node-status-disabled { @apply bg-gray-100 border-gray-300 text-gray-500; }
+        
+        .business-type-card { @apply p-4 border-2 rounded-lg cursor-pointer transition-all duration-200 hover:shadow-lg; }
+        .business-type-card.selected { @apply border-blue-500 bg-blue-50; }
+        .business-type-card:hover { @apply border-blue-300; }
+        
+        .status-indicator {
+            @apply inline-block w-3 h-3 rounded-full mr-2;
+        }
+        .status-mandatory { @apply bg-red-500; }
+        .status-optional { @apply bg-blue-500; }
+        .status-dependent { @apply bg-yellow-500; }
+        .status-completed { @apply bg-green-500; }
+        .status-disabled { @apply bg-gray-400; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">🚀 Dynamic Onboarding System</h1>
+            <p class="text-gray-600 mb-4">Demonstrating CSV-based business type requirements with observer pattern and persistence</p>
+            
+            <!-- Session Info -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div class="bg-blue-50 p-3 rounded-lg">
+                    <div class="text-sm text-blue-600 font-medium">Session ID</div>
+                    <div class="text-sm text-blue-800 font-mono" id="sessionId">Not started</div>
+                </div>
+                <div class="bg-green-50 p-3 rounded-lg">
+                    <div class="text-sm text-green-600 font-medium">Business Type</div>
+                    <div class="text-sm text-green-800" id="businessType">Not selected</div>
+                </div>
+                <div class="bg-purple-50 p-3 rounded-lg">
+                    <div class="text-sm text-purple-600 font-medium">Completion Status</div>
+                    <div class="text-sm text-purple-800" id="completionStatus">Not available</div>
+                </div>
+            </div>
+            
+            <!-- Action Buttons -->
+            <div class="flex flex-wrap gap-2">
+                <button onclick="startNewSession()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                    🆕 Start New Session
+                </button>
+                <button onclick="loadSessionState()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors">
+                    🔄 Load Session State
+                </button>
+                <button onclick="showStateSummary()" class="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors">
+                    📊 Show State Summary
+                </button>
+                <button onclick="simulateReload()" class="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors">
+                    🔄 Simulate Reload
+                </button>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Left Panel: Business Type Selection -->
+            <div class="lg:col-span-1">
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <h2 class="text-xl font-bold text-gray-800 mb-4">🏢 Business Type Selection</h2>
+                    <p class="text-gray-600 text-sm mb-4">Select a business type to see dynamic node requirements</p>
+                    
+                    <div class="space-y-3" id="businessTypeSelection">
+                        <!-- Business types will be loaded dynamically -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Middle Panel: Dynamic Node Status -->
+            <div class="lg:col-span-1">
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <h2 class="text-xl font-bold text-gray-800 mb-4">📋 Dynamic Node Status</h2>
+                    <p class="text-gray-600 text-sm mb-4">Real-time node status based on business type and user actions</p>
+                    
+                    <div class="space-y-2" id="nodeStatusList">
+                        <!-- Node statuses will be loaded dynamically -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel: Current Form -->
+            <div class="lg:col-span-1">
+                <div class="bg-white rounded-lg shadow-lg p-6">
+                    <h2 class="text-xl font-bold text-gray-800 mb-4">📝 Current Form</h2>
+                    <p class="text-gray-600 text-sm mb-4">Fill out the current node's fields</p>
+                    
+                    <div id="currentForm">
+                        <div class="text-gray-500 text-center py-8">
+                            Select a business type to start
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Panel: Session Data & Logs -->
+        <div class="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- Session Data -->
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">💾 Session Data</h2>
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <pre id="sessionData" class="text-sm text-gray-700 whitespace-pre-wrap">No session data</pre>
+                </div>
+            </div>
+
+            <!-- Activity Log -->
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">📝 Activity Log</h2>
+                <div class="bg-gray-50 p-4 rounded-lg h-64 overflow-y-auto">
+                    <div id="activityLog" class="text-sm text-gray-700 space-y-1">
+                        <div class="text-gray-500">No activity yet</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8080/api/v1';
+        let currentSession = null;
+        let currentGraph = null;
+        let nodeStatuses = {};
+
+        // Business types from CSV
+        const businessTypes = [
+            { id: 'individual', name: 'Individual', description: 'Individual business owner' },
+            { id: 'proprietorship', name: 'Proprietorship', description: 'Sole proprietorship business' },
+            { id: 'private_limited', name: 'Private Limited', description: 'Private limited company' },
+            { id: 'public_limited', name: 'Public Limited', description: 'Public limited company' },
+            { id: 'partnership', name: 'Partnership', description: 'Partnership firm' },
+            { id: 'llp', name: 'LLP', description: 'Limited Liability Partnership' },
+            { id: 'trust', name: 'Trust', description: 'Trust organization' },
+            { id: 'society', name: 'Society', description: 'Society organization' },
+            { id: 'huf', name: 'HUF', description: 'Hindu Undivided Family' }
+        ];
+
+        // Initialize the demo
+        async function init() {
+            logActivity('🚀 Initializing Dynamic Onboarding Demo');
+            await loadGraphs();
+            renderBusinessTypes();
+            logActivity('✅ Demo initialized successfully');
+        }
+
+        // Load available graphs
+        async function loadGraphs() {
+            try {
+                const response = await axios.get(`${API_BASE}/graphs`);
+                const graphs = response.data.graphs || [];
+                currentGraph = graphs.find(g => g.name === 'Production Onboarding');
+                if (currentGraph) {
+                    logActivity(`📊 Loaded graph: ${currentGraph.name} (${currentGraph.id})`);
+                } else {
+                    logActivity('⚠️ Production Onboarding graph not found');
+                }
+            } catch (error) {
+                logActivity(`❌ Failed to load graphs: ${error.message}`);
+            }
+        }
+
+        // Render business type selection
+        function renderBusinessTypes() {
+            const container = document.getElementById('businessTypeSelection');
+            container.innerHTML = businessTypes.map(bt => `
+                <div class="business-type-card" onclick="selectBusinessType('${bt.id}')">
+                    <div class="font-medium text-gray-800">${bt.name}</div>
+                    <div class="text-sm text-gray-600">${bt.description}</div>
+                </div>
+            `).join('');
+        }
+
+        // Start a new dynamic session
+        async function startNewSession() {
+            if (!currentGraph) {
+                logActivity('❌ No graph available');
+                return;
+            }
+
+            try {
+                logActivity('🆕 Starting new dynamic session...');
+                const response = await axios.post(`${API_BASE}/dynamic/sessions`, {
+                    graph_id: currentGraph.id,
+                    user_id: 'demo-user-' + Date.now()
+                });
+                
+                currentSession = response.data;
+                updateSessionInfo();
+                logActivity(`✅ Session started: ${currentSession.id}`);
+                
+                // Load initial node status
+                await loadNodeStatus();
+                
+            } catch (error) {
+                logActivity(`❌ Failed to start session: ${error.message}`);
+            }
+        }
+
+        // Select business type
+        async function selectBusinessType(businessType) {
+            if (!currentSession) {
+                logActivity('❌ No active session. Start a session first.');
+                return;
+            }
+
+            try {
+                logActivity(`🏢 Selecting business type: ${businessType}`);
+                
+                // Update business type
+                const response = await axios.put(`${API_BASE}/dynamic/sessions/${currentSession.id}/business-type`, {
+                    business_type: businessType
+                });
+                
+                logActivity(`✅ Business type updated: ${businessType}`);
+                
+                // Submit the business type selection
+                await submitNodeData({
+                    business_type: businessType
+                });
+                
+                // Update UI
+                updateBusinessTypeSelection(businessType);
+                await loadNodeStatus();
+                
+            } catch (error) {
+                logActivity(`❌ Failed to select business type: ${error.message}`);
+            }
+        }
+
+        // Submit node data
+        async function submitNodeData(data) {
+            if (!currentSession) {
+                logActivity('❌ No active session');
+                return;
+            }
+
+            try {
+                logActivity(`📤 Submitting data: ${JSON.stringify(data)}`);
+                const response = await axios.post(`${API_BASE}/dynamic/sessions/${currentSession.id}/submit`, data);
+                
+                logActivity(`✅ Data submitted successfully`);
+                logActivity(`📍 Next node: ${response.data.next_node_id}`);
+                
+                // Update session data
+                if (response.data.metadata && response.data.metadata.session_status) {
+                    logActivity(`📊 Session status: ${response.data.metadata.session_status}`);
+                }
+                
+                // Reload node status
+                await loadNodeStatus();
+                updateSessionData();
+                
+            } catch (error) {
+                logActivity(`❌ Failed to submit data: ${error.message}`);
+                if (error.response && error.response.data) {
+                    logActivity(`📝 Error details: ${JSON.stringify(error.response.data)}`);
+                }
+            }
+        }
+
+        // Load current node status
+        async function loadNodeStatus() {
+            if (!currentSession) return;
+
+            try {
+                const response = await axios.get(`${API_BASE}/dynamic/sessions/${currentSession.id}/status`);
+                nodeStatuses = response.data.nodes || {};
+                
+                renderNodeStatuses();
+                updateCompletionStatus(response.data.completion_status);
+                
+                logActivity(`📊 Loaded status for ${Object.keys(nodeStatuses).length} nodes`);
+                
+            } catch (error) {
+                logActivity(`❌ Failed to load node status: ${error.message}`);
+            }
+        }
+
+        // Render node statuses
+        function renderNodeStatuses() {
+            const container = document.getElementById('nodeStatusList');
+            
+            if (Object.keys(nodeStatuses).length === 0) {
+                container.innerHTML = '<div class="text-gray-500 text-center py-4">No node status available</div>';
+                return;
+            }
+
+            container.innerHTML = Object.entries(nodeStatuses).map(([nodeId, nodeInfo]) => `
+                <div class="flex items-center justify-between p-3 border rounded-lg node-status-${nodeInfo.status}">
+                    <div class="flex items-center">
+                        <span class="status-indicator status-${nodeInfo.status}"></span>
+                        <div>
+                            <div class="font-medium">${nodeInfo.name}</div>
+                            <div class="text-xs opacity-75">${nodeInfo.status} (was ${nodeInfo.initial_status})</div>
+                        </div>
+                    </div>
+                    <div class="text-xs text-gray-500">
+                        ${nodeInfo.dependencies ? nodeInfo.dependencies.length : 0} deps
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Update business type selection UI
+        function updateBusinessTypeSelection(selectedType) {
+            document.querySelectorAll('.business-type-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+            
+            const selectedCard = document.querySelector(`[onclick="selectBusinessType('${selectedType}')"]`);
+            if (selectedCard) {
+                selectedCard.classList.add('selected');
+            }
+        }
+
+        // Update session info
+        function updateSessionInfo() {
+            if (currentSession) {
+                document.getElementById('sessionId').textContent = currentSession.id.substring(0, 8) + '...';
+                document.getElementById('businessType').textContent = currentSession.data?.business_type || 'Not selected';
+            }
+        }
+
+        // Update completion status
+        function updateCompletionStatus(completionStatus) {
+            if (completionStatus) {
+                const status = completionStatus.can_complete ? '✅ Can Complete' : '⏳ In Progress';
+                document.getElementById('completionStatus').textContent = status;
+            }
+        }
+
+        // Update session data display
+        function updateSessionData() {
+            if (currentSession) {
+                document.getElementById('sessionData').textContent = JSON.stringify(currentSession.data, null, 2);
+            }
+        }
+
+        // Load session state
+        async function loadSessionState() {
+            if (!currentSession) {
+                logActivity('❌ No active session');
+                return;
+            }
+
+            try {
+                logActivity('🔄 Loading session state...');
+                await loadNodeStatus();
+                updateSessionData();
+                logActivity('✅ Session state loaded');
+            } catch (error) {
+                logActivity(`❌ Failed to load session state: ${error.message}`);
+            }
+        }
+
+        // Show state summary
+        async function showStateSummary() {
+            if (!currentSession) {
+                logActivity('❌ No active session');
+                return;
+            }
+
+            try {
+                logActivity('📊 Loading state summary...');
+                const response = await axios.get(`${API_BASE}/dynamic/sessions/${currentSession.id}/summary`);
+                
+                logActivity('📋 State Summary:');
+                logActivity(`  - Has Dynamic State: ${response.data.has_dynamic_state}`);
+                logActivity(`  - Business Type: ${response.data.business_type}`);
+                logActivity(`  - Total Nodes: ${response.data.total_nodes}`);
+                
+                if (response.data.status_counts) {
+                    logActivity('  - Status Counts:');
+                    Object.entries(response.data.status_counts).forEach(([status, count]) => {
+                        logActivity(`    * ${status}: ${count}`);
+                    });
+                }
+                
+                if (response.data.validation_issues && response.data.validation_issues.length > 0) {
+                    logActivity('  - Validation Issues:');
+                    response.data.validation_issues.forEach(issue => {
+                        logActivity(`    * ${issue}`);
+                    });
+                }
+                
+            } catch (error) {
+                logActivity(`❌ Failed to load state summary: ${error.message}`);
+            }
+        }
+
+        // Simulate session reload
+        async function simulateReload() {
+            if (!currentSession) {
+                logActivity('❌ No active session');
+                return;
+            }
+
+            try {
+                logActivity('🔄 Simulating session reload...');
+                
+                // Start a new session with the same graph (simulating reload)
+                const response = await axios.post(`${API_BASE}/dynamic/sessions`, {
+                    graph_id: currentGraph.id,
+                    user_id: 'demo-user-reload'
+                });
+                
+                const newSession = response.data;
+                logActivity(`✅ New session created: ${newSession.id.substring(0, 8)}...`);
+                
+                // Check if the new session has the same data (persistence test)
+                if (newSession.data && Object.keys(newSession.data).length > 0) {
+                    logActivity('✅ Session data persisted successfully');
+                } else {
+                    logActivity('⚠️ No persisted data found in new session');
+                }
+                
+                // Update current session
+                currentSession = newSession;
+                updateSessionInfo();
+                await loadNodeStatus();
+                
+            } catch (error) {
+                logActivity(`❌ Failed to simulate reload: ${error.message}`);
+            }
+        }
+
+        // Log activity
+        function logActivity(message) {
+            const logContainer = document.getElementById('activityLog');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `<span class="text-gray-500">[${timestamp}]</span> ${message}`;
+            
+            // Remove "No activity yet" message if it exists
+            const noActivity = logContainer.querySelector('.text-gray-500');
+            if (noActivity && noActivity.textContent === 'No activity yet') {
+                noActivity.remove();
+            }
+            
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

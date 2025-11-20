@@ -14,6 +14,8 @@ import (
 	"onboarding-system/internal/config"
 	"onboarding-system/internal/onboarding"
 	"onboarding-system/internal/storage"
+
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
@@ -39,10 +41,17 @@ func main() {
 	// Initialize API handlers
 	handlers := api.NewHandlers(onboardingService)
 
-	// Setup HTTP server
+	// Initialize dynamic API handlers
+	dynamicService := onboarding.NewDynamicService(store, cfg, logrus.New())
+	dynamicHandlers := api.NewDynamicHandlers(dynamicService, logrus.New())
+
+	// Setup HTTP server with combined router
+	router := handlers.Router()
+	dynamicHandlers.RegisterDynamicRoutes(router)
+
 	server := &http.Server{
 		Addr:    cfg.Server.Address,
-		Handler: handlers.Router(),
+		Handler: router,
 	}
 
 	// Start server in a goroutine
@@ -99,6 +108,22 @@ func seedDemoDataIfNeeded(service *onboarding.Service) {
 			log.Printf("Failed to create production graph: %v", err)
 		} else {
 			log.Printf("Created production onboarding graph with ID: %s", productionGraph.ID)
+		}
+
+		// Create dynamic production onboarding graph
+		dynamicProductionGraph := examples.CreateDynamicProductionOnboardingGraph()
+		if err := service.CreateGraph(ctx, dynamicProductionGraph); err != nil {
+			log.Printf("Failed to create dynamic production graph: %v", err)
+		} else {
+			log.Printf("Created dynamic production onboarding graph with ID: %s", dynamicProductionGraph.ID)
+		}
+
+		// Create enhanced dynamic production onboarding graph
+		enhancedDynamicGraph := examples.CreateEnhancedDynamicProductionOnboardingGraph()
+		if err := service.CreateGraph(ctx, enhancedDynamicGraph); err != nil {
+			log.Printf("Failed to create enhanced dynamic production graph: %v", err)
+		} else {
+			log.Printf("Created enhanced dynamic production onboarding graph with ID: %s", enhancedDynamicGraph.ID)
 		}
 
 		log.Println("Demo data seeding completed!")
