@@ -18,7 +18,7 @@ A flexible, graph-based onboarding system built in Go that provides dynamic, fau
 Preview the interactive demos directly in your browser (click "Raw" button on GitHub to view, or download and open locally):
 
 ### Main Demos
-- **[Interactive Fintech Onboarding Demo](demo.html)** - Full interactive onboarding flow visualization
+- **[Interactive Fintech Onboarding Demo](index.html)** - Full interactive onboarding flow visualization
 - **[Dynamic Onboarding System Demo](dynamic-onboarding-demo.html)** - CSV-based business type requirements with observer pattern
 
 ### Test Interfaces
