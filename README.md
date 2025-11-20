@@ -15,10 +15,11 @@ A flexible, graph-based onboarding system built in Go that provides dynamic, fau
 
 ## 🎮 Live Demos
 
-Preview the interactive demos directly in your browser (click "Raw" button on GitHub to view, or download and open locally):
+Preview the interactive demos directly in your browser:
 
 ### Main Demos
 - **[Interactive Fintech Onboarding Demo](index.html)** - Full interactive onboarding flow visualization
+  - 🔗 [Live Preview](https://htmlpreview.github.io/?https://raw.githubusercontent.com/ankur-rzp/onboarding/observer-dynamic/index.html) - View with all dependencies loaded
 - **[Dynamic Onboarding System Demo](dynamic-onboarding-demo.html)** - CSV-based business type requirements with observer pattern
 
 ### Test Interfaces
