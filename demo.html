@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Fintech Onboarding HLD</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --bg-color: #020617;
+            --card-bg: #0f172a;
+            --card-inactive: #1e293b; 
+            --border-inactive: #475569;
+            
+            --primary: #3b82f6;
+            --success: #10b981;
+            --valid: #f59e0b;
+            --danger: #ef4444;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            background-image: 
+                linear-gradient(rgba(30, 41, 59, 0.4) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(30, 41, 59, 0.4) 1px, transparent 1px);
+            background-size: 40px 40px;
+            color: #f8fafc;
+            height: 100vh;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* --- LAYOUT --- */
+        .main-container {
+            display: flex; width: 100%; height: 100%;
+            align-items: center; justify-content: center;
+            gap: 20px; padding: 20px;
+        }
+
+        .graph-wrapper {
+            flex: 2; height: 100%;
+            display: flex; align-items: center; justify-content: center;
+            overflow: hidden; position: relative;
+        }
+
+        .graph-area {
+            position: relative; width: 1000px; height: 650px;
+            transform: scale(0.95); transform-origin: center;
+        }
+
+        /* --- LEGEND --- */
+        .legend-box {
+            position: absolute; bottom: 30px; left: 30px;
+            background: rgba(15, 23, 42, 0.95);
+            border: 1px solid #334155; border-radius: 12px;
+            padding: 16px; font-size: 12px; z-index: 100;
+            backdrop-filter: blur(8px); display: flex; flex-direction: column;
+            gap: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); min-width: 140px;
+        }
+        .legend-title { color: #64748b; font-weight: 700; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+        .legend-item { display: flex; align-items: center; gap: 12px; opacity: 0.4; transition: all 0.3s; color: #94a3b8; font-weight: 500; }
+        .legend-item.active { opacity: 1; transform: translateX(6px); color: #fff; font-weight: 700; text-shadow: 0 0 10px rgba(255,255,255,0.2); }
+        .legend-bar { width: 24px; height: 6px; border-radius: 3px; background: #334155; transition: all 0.3s; }
+        .legend-item.active .legend-bar { box-shadow: 0 0 8px currentColor; background: currentColor; }
+
+        /* --- SVG CONNECTIONS --- */
+        svg.edges {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 1; pointer-events: none; filter: drop-shadow(0 0 2px rgba(0,0,0,0.8));
+        }
+        .edge-path { fill: none; stroke: #334155; stroke-width: 4; stroke-linecap: round; opacity: 0.5; transition: stroke 0.5s ease, opacity 0.5s ease; }
+        .edge-path.active-route { stroke: #64748b; opacity: 1; filter: drop-shadow(0 0 3px rgba(100, 116, 139, 0.4)); }
+        .packet-orb { fill: #60a5fa; filter: drop-shadow(0 0 8px #3b82f6); opacity: 0; }
+        .traveling { offset-path: path(var(--path-d)); animation: travelPath 0.8s linear forwards; }
+        @keyframes travelPath {
+            0% { offset-distance: 0%; opacity: 1; transform: scale(0.8); }
+            50% { transform: scale(1.4); opacity: 1; fill: #fff; }
+            100% { offset-distance: 100%; opacity: 0; transform: scale(0.5); }
+        }
+
+        /* --- NODES --- */
+        .node {
+            position: absolute; width: 180px; background: var(--card-inactive);
+            border: 1px solid var(--border-inactive); border-radius: 12px; padding: 14px;
+            z-index: 5; transform: translate(-50%, -50%); transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        .node .node-header span { color: #cbd5e1; transition: color 0.3s; font-weight: 600; }
+        .node .node-sub { color: #94a3b8; transition: color 0.3s; }
+        .node i { color: #94a3b8; transition: color 0.3s; }
+        
+        .node.active {
+            background: rgba(15, 23, 42, 0.9); border-color: var(--primary);
+            box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.5), 0 12px 40px -10px rgba(59, 130, 246, 0.5), inset 0 0 20px rgba(59, 130, 246, 0.1);
+            transform: translate(-50%, -55%) scale(1.05);
+        }
+        .node.active .node-header span { color: #fff; text-shadow: 0 0 10px rgba(255,255,255,0.5); }
+        .node.active .node-sub { color: #bfdbfe; }
+        .node.active i { color: var(--primary); }
+        
+        .node.completed { border-color: var(--success); box-shadow: 0 0 15px rgba(16, 185, 129, 0.15); background: #0f172a; }
+        .node.completed i { color: var(--success); }
+        
+        .node[data-type="risk"].active { border-color: var(--danger); box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.5), 0 10px 40px -10px rgba(239, 68, 68, 0.4), inset 0 0 20px rgba(239, 68, 68, 0.1); }
+        .node[data-type="risk"].active i { color: var(--danger); }
+
+        .node-header { display: flex; justify-content: space-between; align-items: center; font-size: 13px; margin-bottom: 4px; letter-spacing: 0.3px; }
+        .node-sub { font-size: 11px; font-family: 'Monaco', 'Consolas', monospace; margin-bottom: 10px; }
+        .proc-container { display: flex; flex-direction: column; gap: 4px; }
+        .proc-track { height: 5px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden; }
+        .proc-fill { height: 100%; width: 0%; transition: width 0.4s ease-out; }
+        .fill-i { background: var(--primary); box-shadow: 0 0 6px var(--primary); }
+        .fill-v { background: var(--valid); box-shadow: 0 0 6px var(--valid); }
+        .fill-o { background: var(--success); box-shadow: 0 0 6px var(--success); }
+
+        .port { position: absolute; width: 10px; height: 10px; background: #1e293b; border: 2px solid #94a3b8; border-radius: 50%; top: 50%; transform: translateY(-50%); z-index: 10; }
+        .port.in { left: -6px; }
+        .port.out { right: -6px; }
+        .node.active .port { background: #0f172a; border-color: var(--primary); }
+        .node.completed .port { border-color: var(--success); background: var(--success); }
+
+        /* --- USER VIEW --- */
+        .user-view {
+            width: 380px; height: 740px; background: #fff; border-radius: 36px;
+            position: relative; overflow: hidden; display: flex; flex-direction: column;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 8px #1e293b; flex-shrink: 0;
+        }
+        .app-header {
+            padding: 18px 24px; background: #fff; border-bottom: 1px solid #f1f5f9;
+            display: flex; align-items: center; justify-content: space-between; z-index: 20;
+        }
+        .mode-toggle {
+            display: flex; gap: 8px; background: #f1f5f9; padding: 4px; border-radius: 20px; cursor: pointer;
+        }
+        .mode-icon {
+            width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #64748b; transition: all 0.2s;
+        }
+        .mode-icon.active { background: #fff; color: #3b82f6; shadow: 0 2px 5px rgba(0,0,0,0.1); }
+
+        /* View Containers */
+        .view-container {
+            flex: 1; position: relative; overflow: hidden;
+        }
+        .app-body {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            padding: 24px; overflow-y: auto; background: #f8fafc;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+        .app-body.hidden { opacity: 0; pointer-events: none; transform: translateX(20px); }
+
+        /* Form Styles */
+        .form-label { font-size: 13px; color: #64748b; font-weight: 600; margin-bottom: 6px; display: block; }
+        .form-input { width: 100%; padding: 12px 14px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 14px; outline: none; transition: all 0.2s; color: #1e293b; }
+        .form-input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
+        .btn-primary { width: 100%; padding: 14px; background: #2563eb; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; margin-top: 24px; transition: transform 0.1s, background 0.2s; }
+        .btn-primary:hover { background: #1d4ed8; }
+
+        /* Chat Styles */
+        .chat-interface { display: flex; flex-direction: column; height: 100%; background: #f8fafc; }
+        .chat-messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding-bottom: 80px; }
+        
+        .msg { max-width: 85%; padding: 12px 16px; border-radius: 16px; font-size: 14px; line-height: 1.5; position: relative; animation: popIn 0.3s ease-out; }
+        .msg-agent { background: #e2e8f0; color: #1e293b; border-bottom-left-radius: 4px; align-self: flex-start; }
+        .msg-user { background: #2563eb; color: #fff; border-bottom-right-radius: 4px; align-self: flex-end; }
+        
+        .chat-input-area { 
+            position: absolute; bottom: 0; left: 0; width: 100%; padding: 16px; background: #fff; border-top: 1px solid #e2e8f0;
+            display: flex; gap: 10px; z-index: 10;
+        }
+        /* Fixed Input Styles for Visibility */
+        .chat-input { 
+            flex: 1; 
+            background: #f1f5f9; 
+            border: 1px solid #cbd5e1; 
+            padding: 10px 16px; 
+            border-radius: 20px; 
+            outline: none; 
+            font-size: 14px; 
+            color: #0f172a; /* Dark Text */
+        }
+        .chat-input:focus {
+            border-color: #3b82f6;
+            background: #fff;
+        }
+        .chat-input::placeholder {
+            color: #94a3b8;
+        }
+
+        .send-btn { width: 40px; height: 40px; border-radius: 50%; background: #2563eb; color: white; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+
+        /* Chat Options (Chips) */
+        .chat-options { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+        .chat-chip { background: #fff; border: 1px solid #cbd5e1; color: #475569; padding: 8px 16px; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .chat-chip:hover { border-color: #3b82f6; color: #3b82f6; background: #eff6ff; }
+
+        @keyframes popIn { from { opacity: 0; transform: translateY(10px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+        .loader-overlay { position: absolute; inset: 0; background: rgba(255,255,255,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 50; opacity: 0; pointer-events: none; transition: opacity 0.3s; backdrop-filter: blur(4px); }
+        .loader-overlay.visible { opacity: 1; pointer-events: auto; }
+        .spinner { width: 40px; height: 40px; border: 3px solid #e2e8f0; border-top-color: #3b82f6; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+    </style>
+</head>
+<body>
+
+    <div class="main-container">
+
+        <!-- LIVE LEGEND -->
+        <div class="legend-box">
+            <div class="legend-title">Node Lifecycle</div>
+            <div class="legend-item" id="leg-input"><div class="legend-bar" style="color: var(--primary)"></div><span>Input</span></div>
+            <div class="legend-item" id="leg-valid"><div class="legend-bar" style="color: var(--valid)"></div><span>Validation</span></div>
+            <div class="legend-item" id="leg-persist"><div class="legend-bar" style="color: var(--success)"></div><span>Persistence</span></div>
+        </div>
+
+        <!-- GRAPH VISUALIZATION -->
+        <div class="graph-wrapper">
+            <div class="graph-area">
+                <svg class="edges">
+                    <!-- Paths -->
+                    <path id="path_signup_biz" class="edge-path" d="M 190 325 L 230 325" />
+                    <circle id="orb_signup_biz" r="5" class="packet-orb" />
+
+                    <path id="path_biz_pvt" class="edge-path" d="M 410 325 C 430 325, 430 150, 450 150" />
+                    <circle id="orb_biz_pvt" r="5" class="packet-orb" />
+
+                    <path id="path_biz_ind" class="edge-path" d="M 410 325 C 430 325, 430 500, 450 500" />
+                    <circle id="orb_biz_ind" r="5" class="packet-orb" />
+
+                    <path id="path_pvt_bank" class="edge-path" d="M 630 150 C 650 150, 650 325, 670 325" />
+                    <circle id="orb_pvt_bank" r="5" class="packet-orb" />
+
+                    <path id="path_ind_bank" class="edge-path" d="M 630 500 C 650 500, 650 325, 670 325" />
+                    <circle id="orb_ind_bank" r="5" class="packet-orb" />
+
+                    <path id="path_bank_risk" class="edge-path" d="M 850 325 L 890 325" />
+                    <circle id="orb_bank_risk" r="5" class="packet-orb" />
+                </svg>
+
+                <!-- NODES -->
+                <div id="n_signup" class="node active" style="top:325px; left:100px;">
+                    <div class="port out"></div>
+                    <div class="node-header"><span>Sign Up</span> <i data-lucide="file-text" size="14"></i></div>
+                    <div class="node-sub">Basic Info</div>
+                    <div class="proc-container">
+                        <div class="proc-track"><div class="proc-fill fill-i" id="b_signup_i"></div></div>
+                        <div class="proc-track"><div class="proc-fill fill-v" id="b_signup_v"></div></div>
+                        <div class="proc-track"><div class="proc-fill fill-o" id="b_signup_o"></div></div>
+                    </div>
+                </div>
+
+                <div id="n_biz" class="node" style="top:325px; left:320px;">
+                    <div class="port in"></div> <div class="port out"></div>
+                    <div class="node-header"><span>Biz Profile</span> <i data-lucide="building-2" size="14"></i></div>
+                    <div class="node-sub">Category/Type</div>
+                    <div class="proc-container">
+                        <div class="proc-track"><div class="proc-fill fill-i" id="b_biz_i"></div></div>
+                        <div class="proc-track"><div class="proc-fill fill-v" id="b_biz_v"></div></div>
+                        <div class="proc-track"><div class="proc-fill fill-o" id="b_biz_o"></div></div>
+                    </div>
+                </div>
+
+                <div id="n_pvt" class="node" style="top:150px; left:540px;">
+                    <div class="port in"></div> <div class="port out"></div>
+                    <div class="node-header"><span>Company</span> <i data-lucide="briefcase" size="14"></i></div>
+                    <div class="node-sub">CIN / GSTIN</div>
+                    <div class="proc-container">
+                        <div class="proc-track"><div class="proc-fill fill-i" id="b_pvt_i"></div></div>
+                        <div class="proc-track"><div class="proc-fill fill-v" id="b_pvt_v"></div></div>
+                        <div class="proc-track"><div class="proc-fill fill-o" id="b_pvt_o"></div></div>
+                    </div>
+                </div>
+
+                <div id="n_ind" class="node" style="top:500px; left:540px;">
+                    <div class="port in"></div> <div class="port out"></div>
+                    <div class="node-header"><span>Identity</span> <i data-lucide="user" size="14"></i></div>
+                    <div class="node-sub">PAN / Aadhaar</div>
+                    <div class="proc-container">
+                        <div class="proc-track"><div class="proc-fill fill-i" id="b_ind_i"></div></div>
+                        <div class="proc-track"><div class="proc-fill fill-v" id="b_ind_v"></div></div>
+                        <div class="proc-track"><div class="proc-fill fill-o" id="b_ind_o"></div></div>
+                    </div>
+                </div>
+
+                <div id="n_bank" class="node" style="top:325px; left:760px;">
+                    <div class="port in"></div> <div class="port out"></div>
+                    <div class="node-header"><span>Banking</span> <i data-lucide="landmark" size="14"></i></div>
+                    <div class="node-sub">Penny Drop</div>
+                    <div class="proc-container">
+                        <div class="proc-track"><div class="proc-fill fill-i" id="b_bank_i"></div></div>
+                        <div class="proc-track"><div class="proc-fill fill-v" id="b_bank_v"></div></div>
+                        <div class="proc-track"><div class="proc-fill fill-o" id="b_bank_o"></div></div>
+                    </div>
+                </div>
+
+                <div id="n_risk" class="node" data-type="risk" style="top:325px; left:980px;">
+                    <div class="port in"></div>
+                    <div class="node-header"><span>Risk Engine</span> <i data-lucide="shield-alert" size="14"></i></div>
+                    <div class="node-sub text-red-300">Aggregator</div>
+                    <div class="proc-container">
+                        <div class="proc-track"><div class="proc-fill fill-i" id="b_risk_i"></div></div>
+                        <div class="proc-track"><div class="proc-fill fill-v" id="b_risk_v" style="background:#ef4444"></div></div>
+                        <div class="proc-track"><div class="proc-fill fill-o" id="b_risk_o"></div></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- USER UI -->
+        <div class="user-view">
+            <div class="app-header">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/8/89/Razorpay_logo.svg" alt="Logo" style="height: 22px;">
+                
+                <!-- MODE TOGGLE -->
+                <div class="mode-toggle">
+                    <div class="mode-icon active" id="btn-form" onclick="switchMode('form')">
+                        <i data-lucide="file-text" size="16"></i>
+                    </div>
+                    <div class="mode-icon" id="btn-chat" onclick="switchMode('chat')">
+                        <i data-lucide="message-square" size="16"></i>
+                    </div>
+                </div>
+            </div>
+
+            <div class="view-container">
+                <!-- FORM MODE -->
+                <div class="app-body" id="form-container"></div>
+                
+                <!-- CHAT MODE (Initially Hidden) -->
+                <div class="app-body hidden chat-interface" id="chat-container">
+                    <div class="chat-messages" id="chat-messages">
+                        <!-- Messages injected here -->
+                    </div>
+                    <div class="chat-input-area" id="chat-input-area">
+                        <input type="text" class="chat-input" id="chat-input-field" placeholder="Type here..." oninput="handleChatInput()">
+                        <button class="send-btn" onclick="sendChat()">
+                            <i data-lucide="send" size="16"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="loader-overlay" id="loader">
+                <div class="spinner"></div>
+                <div style="margin-top:20px; font-size:14px; color:#475569; font-weight:600; letter-spacing:0.5px;" id="loader-text">VERIFYING DETAILS...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+
+        let currentStep = 'signup';
+        let bizType = 'pvt';
+        let uiMode = 'form'; // 'form' | 'chat'
+        
+        // --- FORM SCREENS ---
+        const screens = {
+            signup: `
+                <h2 class="text-2xl font-bold mb-2 text-slate-800">Create Account</h2>
+                <p class="text-sm text-slate-500 mb-8">Enter details to start accepting payments.</p>
+                <div class="mb-4"><label class="form-label">Work Email</label><input type="email" class="form-input" placeholder="name@company.com" oninput="fillInput('n_signup')"></div>
+                <div class="mb-4"><label class="form-label">Mobile</label><input type="tel" class="form-input" placeholder="+91 98765 43210" oninput="fillInput('n_signup')"></div>
+                <button class="btn-primary" onclick="goNext('biz')">Sign Up &rarr;</button>
+            `,
+            biz: `
+                <h2 class="text-2xl font-bold mb-2 text-slate-800">Business Type</h2>
+                <p class="text-sm text-slate-500 mb-8">Select your business category.</p>
+                <div class="flex gap-4 mb-8">
+                    <div class="flex-1 border border-blue-500 bg-blue-50 p-4 rounded-xl cursor-pointer transition-all" id="card-pvt" onclick="toggleBiz('pvt')"><div class="text-blue-600 mb-2"><i data-lucide="briefcase"></i></div><div class="font-bold text-sm text-slate-700">Private Ltd</div></div>
+                    <div class="flex-1 border border-slate-200 bg-white p-4 rounded-xl cursor-pointer transition-all hover:border-slate-300" id="card-ind" onclick="toggleBiz('ind')"><div class="text-slate-400 mb-2"><i data-lucide="user"></i></div><div class="font-bold text-sm text-slate-500">Individual</div></div>
+                </div>
+                <button class="btn-primary" onclick="goNext(bizType === 'pvt' ? 'pvt' : 'ind')">Continue &rarr;</button>
+            `,
+            pvt: `
+                <h2 class="text-2xl font-bold mb-2 text-slate-800">Company Details</h2>
+                <p class="text-sm text-slate-500 mb-8">Verify business registration.</p>
+                <div class="mb-4"><label class="form-label">CIN</label><input type="text" class="form-input" placeholder="U12345MH2023PTC..." oninput="fillInput('n_pvt')"></div>
+                <div class="mb-4"><label class="form-label">GSTIN</label><input type="text" class="form-input" placeholder="22AAAAA0000A1Z5" oninput="fillInput('n_pvt')"></div>
+                <button class="btn-primary" onclick="goNext('bank')">Verify & Continue</button>
+            `,
+            ind: `
+                <h2 class="text-2xl font-bold mb-2 text-slate-800">Identity Check</h2>
+                <p class="text-sm text-slate-500 mb-8">Verify personal identity.</p>
+                <div class="mb-4"><label class="form-label">PAN Number</label><input type="text" class="form-input" placeholder="ABCDE1234F" oninput="fillInput('n_ind')"></div>
+                <button class="btn-primary" onclick="goNext('bank')">Verify & Continue</button>
+            `,
+            bank: `
+                <h2 class="text-2xl font-bold mb-2 text-slate-800">Bank Settlement</h2>
+                <p class="text-sm text-slate-500 mb-6">For receiving payouts.</p>
+                <div class="mb-4"><label class="form-label">IFSC</label><input type="text" class="form-input" placeholder="HDFC0001234" oninput="fillInput('n_bank')"></div>
+                <div class="mb-4"><label class="form-label">Account Number</label><input type="password" class="form-input" placeholder="•••• •••• 8899" oninput="fillInput('n_bank')"></div>
+                <button class="btn-primary" onclick="goNext('risk')">Add Account</button>
+            `,
+            success: `
+                <div class="flex flex-col items-center justify-center h-full text-center pb-20">
+                    <div class="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-6 animate-bounce"><i data-lucide="check" style="width:40px; height:40px;"></i></div>
+                    <h2 class="text-3xl font-bold text-slate-800">You're Live!</h2>
+                    <p class="text-slate-500 mt-2 mb-8">Start accepting payments instantly.</p>
+                    <button class="btn-primary bg-slate-800" onclick="location.reload()">Dashboard</button>
+                </div>
+            `
+        };
+
+        // --- CHAT PROMPTS (WARMER) ---
+        const chatPrompts = {
+            signup: "Hey! Welcome to Razorpay. Let's get you onboarded 🚀. First things first, could you please share your **Work Email** and **Mobile Number**?",
+            biz: "Awesome! Now, tell us a bit about your business. What category does it fall under?",
+            pvt: "Got it. Since you are a Private Ltd, we'll need your **CIN** and **GSTIN** to verify the entity.",
+            ind: "Got it. For Individuals, we just need your **PAN Number** to verify your identity.",
+            bank: "Almost done! Where should we settle your payouts? Please enter your **Bank Account** details.",
+            risk: "Thanks! Hang tight while we run a quick risk assessment on your profile...",
+            success: "Woohoo! You are all set and live! 🎉 Welcome to the family."
+        };
+
+        function init() {
+            document.getElementById('form-container').innerHTML = screens.signup;
+            addAgentMessage(chatPrompts.signup); // Init chat
+            lucide.createIcons();
+            highlightRoute('signup');
+            setLegendState('input');
+        }
+
+        // --- MODE SWITCHING ---
+        function switchMode(mode) {
+            uiMode = mode;
+            const formContainer = document.getElementById('form-container');
+            const chatContainer = document.getElementById('chat-container');
+            const btnForm = document.getElementById('btn-form');
+            const btnChat = document.getElementById('btn-chat');
+
+            if (mode === 'chat') {
+                formContainer.classList.add('hidden');
+                chatContainer.classList.remove('hidden');
+                btnChat.classList.add('active');
+                btnForm.classList.remove('active');
+                // Ensure chat input is cleared/focused
+                document.getElementById('chat-input-field').focus();
+            } else {
+                chatContainer.classList.add('hidden');
+                formContainer.classList.remove('hidden');
+                btnForm.classList.add('active');
+                btnChat.classList.remove('active');
+            }
+        }
+
+        // --- FORM LOGIC ---
+        function setLegendState(state) {
+            document.querySelectorAll('.legend-item').forEach(el => el.classList.remove('active'));
+            if (state) document.getElementById(`leg-${state}`).classList.add('active');
+        }
+
+        function fillInput(nodeId) {
+            document.getElementById(`b_${nodeId.replace('n_','')}_i`).style.width = '100%';
+            setLegendState('input');
+        }
+
+        function handleChatInput() {
+            // Fills input for current step when typing in chat
+            fillInput(`n_${currentStep}`);
+        }
+
+        function toggleBiz(type) {
+            bizType = type;
+            const pvt = document.getElementById('card-pvt');
+            const ind = document.getElementById('card-ind');
+            
+            if (pvt && ind) {
+                if(type === 'pvt') {
+                    pvt.className = "flex-1 border border-blue-500 bg-blue-50 p-4 rounded-xl cursor-pointer transition-all";
+                    ind.className = "flex-1 border border-slate-200 bg-white p-4 rounded-xl cursor-pointer transition-all hover:border-slate-300";
+                    document.getElementById('n_pvt').style.opacity = '1';
+                    document.getElementById('n_ind').style.opacity = '0.4';
+                    document.getElementById('path_biz_pvt').classList.add('active-route');
+                    document.getElementById('path_biz_ind').classList.remove('active-route');
+                } else {
+                    ind.className = "flex-1 border border-blue-500 bg-blue-50 p-4 rounded-xl cursor-pointer transition-all";
+                    pvt.className = "flex-1 border border-slate-200 bg-white p-4 rounded-xl cursor-pointer transition-all hover:border-slate-300";
+                    document.getElementById('n_ind').style.opacity = '1';
+                    document.getElementById('n_pvt').style.opacity = '0.4';
+                    document.getElementById('path_biz_ind').classList.add('active-route');
+                    document.getElementById('path_biz_pvt').classList.remove('active-route');
+                }
+            }
+            fillInput('n_biz');
+        }
+
+        // --- CHAT LOGIC ---
+        function addAgentMessage(text) {
+            const chatBox = document.getElementById('chat-messages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'msg msg-agent';
+            
+            // Add formatting
+            const formattedText = text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+            msgDiv.innerHTML = formattedText;
+
+            // Special check for Biz Type options
+            if (text.includes("category")) {
+                const opts = document.createElement('div');
+                opts.className = 'chat-options';
+                opts.innerHTML = `
+                    <div class="chat-chip" onclick="sendChatOption('Private Ltd')">Private Ltd</div>
+                    <div class="chat-chip" onclick="sendChatOption('Individual')">Individual</div>
+                `;
+                chatBox.appendChild(msgDiv);
+                chatBox.appendChild(opts);
+            } else {
+                chatBox.appendChild(msgDiv);
+            }
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function addUserMessage(text) {
+            const chatBox = document.getElementById('chat-messages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'msg msg-user';
+            msgDiv.innerText = text;
+            chatBox.appendChild(msgDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function sendChat() {
+            const input = document.getElementById('chat-input-field');
+            const val = input.value.trim();
+            if (!val) return;
+
+            addUserMessage(val);
+            input.value = '';
+
+            // Determine next step logic similar to goNext
+            if (currentStep === 'signup') goNext('biz');
+            else if (currentStep === 'biz') { /* handled by options, but if typed: */ goNext('pvt'); } 
+            else if (currentStep === 'pvt') goNext('bank');
+            else if (currentStep === 'ind') goNext('bank');
+            else if (currentStep === 'bank') goNext('risk');
+        }
+
+        function sendChatOption(opt) {
+            addUserMessage(opt);
+            if (currentStep === 'biz') {
+                toggleBiz(opt === 'Private Ltd' ? 'pvt' : 'ind');
+                goNext(opt === 'Private Ltd' ? 'pvt' : 'ind');
+            }
+        }
+
+        // --- CORE TRANSITION LOGIC ---
+        async function goNext(nextStep) {
+            const currNode = `n_${currentStep}`;
+            const loader = document.getElementById('loader');
+            
+            // 1. LOCK UI
+            if (uiMode === 'form') loader.classList.add('visible');
+            
+            // 2. VALIDATION
+            setLegendState('valid');
+            document.getElementById(`b_${currentStep}_v`).style.width = '100%';
+            await wait(600);
+
+            // 3. PERSISTENCE
+            setLegendState('persist');
+            const obsBar = document.getElementById(`b_${currentStep}_o`);
+            if (obsBar) obsBar.style.width = '100%';
+            await wait(400);
+
+            // 4. NODE DONE
+            setLegendState(null);
+            const nodeEl = document.getElementById(currNode);
+            nodeEl.classList.remove('active');
+            nodeEl.classList.add('completed');
+
+            // 5. FIRE PACKET
+            let pathId, orbId;
+            if (currentStep === 'signup') { pathId = 'path_signup_biz'; orbId = 'orb_signup_biz'; }
+            else if (currentStep === 'biz') {
+                pathId = bizType === 'pvt' ? 'path_biz_pvt' : 'path_biz_ind';
+                orbId = bizType === 'pvt' ? 'orb_biz_pvt' : 'orb_biz_ind';
+            }
+            else if (currentStep === 'pvt') { pathId = 'path_pvt_bank'; orbId = 'orb_pvt_bank'; }
+            else if (currentStep === 'ind') { pathId = 'path_ind_bank'; orbId = 'orb_ind_bank'; }
+            else if (currentStep === 'bank') { pathId = 'path_bank_risk'; orbId = 'orb_bank_risk'; }
+
+            if (pathId) {
+                const pathEl = document.getElementById(pathId);
+                const orbEl = document.getElementById(orbId);
+                const pathD = pathEl.getAttribute('d');
+                orbEl.style.setProperty('--path-d', `"${pathD}"`);
+                orbEl.classList.add('traveling');
+                await wait(800);
+                orbEl.classList.remove('traveling');
+            }
+
+            // 6. NEXT STEP
+            if (nextStep === 'risk') {
+                runRiskEngine();
+            } else {
+                currentStep = nextStep;
+                
+                // Update Form UI
+                document.getElementById('form-container').innerHTML = screens[currentStep];
+                
+                // Update Chat UI
+                await wait(200); // Tiny delay for chat feel
+                addAgentMessage(chatPrompts[currentStep]);
+
+                lucide.createIcons();
+                document.getElementById(`n_${currentStep}`).classList.add('active');
+                highlightRoute(currentStep);
+                setLegendState('input');
+                loader.classList.remove('visible');
+
+                if(currentStep === 'biz') toggleBiz('pvt');
+            }
+        }
+
+        async function runRiskEngine() {
+            currentStep = 'risk';
+            document.getElementById(`n_risk`).classList.add('active');
+            document.getElementById('loader-text').innerText = "RISK ANALYSIS...";
+            
+            // Add chat message
+            addAgentMessage(chatPrompts.risk);
+
+            setLegendState('input');
+            fillInput('n_risk');
+            await wait(1000);
+            
+            setLegendState('valid');
+            document.getElementById('b_risk_v').style.width = '100%';
+            await wait(1000);
+
+            setLegendState('persist');
+            document.getElementById('b_risk_o').style.width = '100%';
+            await wait(400);
+            
+            document.getElementById(`n_risk`).classList.remove('active');
+            document.getElementById(`n_risk`).classList.add('completed');
+            
+            document.getElementById('loader').classList.remove('visible');
+            document.getElementById('form-container').innerHTML = screens.success;
+            
+            // Final chat
+            addAgentMessage(chatPrompts.success);
+            document.getElementById('chat-input-area').style.display = 'none'; // Hide input on success
+
+            setLegendState(null);
+            lucide.createIcons();
+        }
+
+        function highlightRoute(step) {
+            if(step === 'signup') document.getElementById('path_signup_biz').classList.add('active-route');
+        }
+
+        const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+        init();
+    </script>
+</body>
+</html>
